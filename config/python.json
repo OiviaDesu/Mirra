@@ -1,0 +1,14 @@
+{
+  "version": "3.14.10",
+  "release": "20261026",
+  "target": "x86_64-apple-darwin",
+  "source": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261026",
+  "runtime": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.14.10%2B20261026-x86_64-apple-darwin-install_only_stripped.tar.gz",
+    "sha256": "2fd8becd48cf0ff5f0a15df3c0db7cae7aa708dcaacf901bd30d6cdd6229370b"
+  },
+  "licenses": {
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.14.10%2B20261026-x86_64-apple-darwin-pgo%2Blto-full.tar.zst",
+    "sha256": "efce6e258263296b5a5476ab982b721590c7d25eac7636785a1a46d9bf1cf46b"
+  }
+}

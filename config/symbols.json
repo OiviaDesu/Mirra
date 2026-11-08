@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "note": "Project-authored import allowlist for the endpoint's experimental arm64 iOS build with macOS SDK headers. These are symbol names, not copied Apple library implementations or export tables.",
+  "libraries": {
+    "Foundation": {
+      "install_name": "/System/Library/Frameworks/Foundation.framework/Foundation",
+      "framework": true,
+      "symbols": ["_NSDefaultRunLoopMode", "_OBJC_CLASS_$_NSConstantDictionary", "_OBJC_CLASS_$_NSConstantIntegerNumber", "_OBJC_CLASS_$_NSData", "_OBJC_CLASS_$_NSDate", "_OBJC_CLASS_$_NSDictionary", "_OBJC_CLASS_$_NSJSONSerialization", "_OBJC_CLASS_$_NSMutableArray", "_OBJC_CLASS_$_NSMutableDictionary", "_OBJC_CLASS_$_NSMutableSet", "_OBJC_CLASS_$_NSNumber", "_OBJC_CLASS_$_NSRunLoop", "_OBJC_CLASS_$_NSString", "_OBJC_CLASS_$_NSUUID"]
+    },
+    "CoreFoundation": {
+      "install_name": "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",
+      "framework": true,
+      "symbols": ["___CFConstantStringClassReference", "___kCFBooleanFalse", "___kCFBooleanTrue"]
+    },
+    "Security": {
+      "install_name": "/System/Library/Frameworks/Security.framework/Security",
+      "framework": true,
+      "symbols": ["_SecRandomCopyBytes", "_kSecRandomDefault"]
+    },
+    "objc": {
+      "install_name": "/usr/lib/libobjc.A.dylib",
+      "framework": false,
+      "symbols": ["___objc_personality_v0", "_objc_alloc", "_objc_autoreleasePoolPop", "_objc_autoreleasePoolPush", "_objc_autoreleaseReturnValue", "_objc_enumerationMutation", "_objc_msgSend", "_objc_opt_class", "_objc_opt_isKindOfClass", "_objc_release", "_objc_retain", "_objc_retainAutorelease", "_objc_retainAutoreleaseReturnValue", "_objc_retainAutoreleasedReturnValue", "_objc_storeStrong"]
+    },
+    "System": {
+      "install_name": "/usr/lib/libSystem.B.dylib",
+      "framework": false,
+      "symbols": ["_CC_SHA256", "__Block_object_assign", "__Block_object_dispose", "__NSConcreteStackBlock", "__Unwind_Resume", "___memcpy_chk", "___snprintf_chk", "___stack_chk_fail", "___stack_chk_guard", "___stdinp", "___stdoutp", "_close", "_dispatch_semaphore_create", "_dispatch_semaphore_signal", "_dispatch_semaphore_wait", "_dlopen", "_dlsym", "_fflush", "_free", "_fwrite", "_getline", "_lstat", "_malloc", "_memset", "_open", "_putchar", "_strcmp", "_sysctlbyname", "_unlink", "_write"]
+    }
+  }
+}

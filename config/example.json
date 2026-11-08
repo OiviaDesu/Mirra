@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "backend": {
+    "transport": "ssh",
+    "usb": {"product_type": "", "serial": "", "listen_port": 2222, "device_port": 22},
+    "ssh": {
+      "host": "127.0.0.1",
+      "port": 22,
+      "user_file": "private/bridge/user",
+      "identity_file": "private/bridge/identity",
+      "known_hosts_file": "private/bridge/known_hosts",
+      "host_key_alias": "",
+      "remote_endpoint": "/var/mobile/Library/Caches/Mirra/bridge/endpoint",
+      "remote_certificate": "/var/mobile/Library/Caches/Mirra/bridge/certificate.der",
+      "timeout_seconds": 12
+    },
+    "certificate_file": "private/bridge/certificate.der"
+  },
+  "host": {
+    "runtime_directory": "runtime/host",
+    "system_app": "/System/Applications/iPhone Mirroring.app"
+  },
+  "session": {"seconds": 1800}
+}
