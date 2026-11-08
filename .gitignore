@@ -1,0 +1,15 @@
+# Local app copies and binaries; never redistribute Apple's application.
+/runtime/
+/build/
+/dist/
+# Device credentials, certificates and generated session state.
+/private/
+/config/local.json
+# Local operational checkpoint contains host paths and session ownership data.
+/docs/active.json
+.device-access/
+**/.device-access/
+*.log
+__pycache__/
+*.py[cod]
+.DS_Store
