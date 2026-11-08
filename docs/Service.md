@@ -1,0 +1,100 @@
+# Background support
+
+The per-user LaunchAgent keeps bridge and native launch support available
+without an open Terminal. Guided setup installs it; source users can manage it
+with the CLI below after building and provisioning a bridge.
+
+## Install and control
+
+Stop competing support processes and USB proxies before installation.
+
+```sh
+python3 scripts/service.py prepare --config PATH
+python3 scripts/service.py install
+python3 scripts/service.py status
+```
+
+`prepare` creates a private package and launch definition. `install` registers
+and starts the job. The package contains a configuration snapshot; editing the
+source profile does not change a running service.
+
+Status reports registration, native launch support and bridge health. Readiness
+requires matching live process identities. It does not establish target video.
+
+```sh
+python3 scripts/service.py stop
+python3 scripts/service.py start
+python3 scripts/service.py remove
+```
+
+`stop` unloads support and waits for cleanup while retaining login registration.
+`start` loads it again. `remove` stops support and removes the owned registration,
+preserving private setup, logs and the installed package.
+
+## Update or switch profiles
+
+```sh
+python3 scripts/service.py stop
+python3 scripts/service.py prepare --replace
+python3 scripts/service.py install
+```
+
+Without `--config`, replacement preserves the installed profile and credentials.
+Add `--config PATH` to select another bridge. Cleanup must finish before replacement.
+The previous package is archived for rollback.
+
+Transport changes update the owned launch definition atomically. Conflicting
+or unfamiliar jobs are not overwritten. Previous packages are retained until
+removed explicitly.
+
+## Installed files
+
+| Path under the user's home directory | Purpose |
+| --- | --- |
+| `Library/Application Support/Mirra/current` | Service code, adapters and Python runtime |
+| `Library/Application Support/Mirra/current/private` | SSH access and device certificate |
+| `Library/Application Support/Mirra/current/config.json` | Installed profile |
+| `Library/Application Support/Mirra/current/runtime` | Session and attempt state |
+| `Library/Application Support/Mirra/logs` | Application and service diagnostics |
+| `Library/Application Support/Mirra/service.json` | Current or last session pointer |
+| `Library/Caches/Mirra` | Ownership and recovery records |
+| `Library/LaunchAgents/local.mirra.agent.plist` | Login registration |
+
+Package hashes and host compatibility are verified before startup. Apple's app
+is used from `/System/Applications/iPhone Mirroring.app` and is not copied into
+the package. Private profiles and installed service folders are not distributable
+app packages.
+
+## Diagnostic storage
+
+Service diagnostics rotate at 2 MiB with one tail backup. Bursts can briefly
+exceed the threshold between rotation checks. SSH stderr keeps a bounded memory
+tail. App log files follow the [dated retention policy](App.md#logs).
+
+After verified cleanup, support retains three completed backend attempts and
+three completed native sessions, plus the active attempt and session. Live,
+unfinished or unfamiliar directories are preserved. Installation backups are
+not automatically pruned.
+
+Temporary broker workspaces use a lease. They are removed after sharingd is
+restored and the lease is unused. Cleanup verifies ownership and does not follow
+substituted symlinks. Retention events appear in the service log; a deferred
+result means the data was preserved because verification did not finish.
+
+## Recovery
+
+Launchd restarts a failed supervisor. Backend workers retry independently after
+their children exit and the previous native registrations are restored. The
+controller verifies process birth times, staged configuration and exclusive
+ownership before recovering an abandoned job.
+
+A failed observation does not authorize a replacement. Unresolved cleanup keeps
+its recovery record and blocks package replacement until restoration finishes.
+Target Mirroring may still need a new Connect action after backend recovery.
+
+## Python runtime
+
+The service uses its own verified Python copy. Its launch command does not
+depend on the app's current location, so moving or closing the app leaves
+background support available. A missing or modified recorded runtime file
+prevents startup.
