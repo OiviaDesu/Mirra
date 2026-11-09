@@ -1,9 +1,21 @@
 """Read the host ABI probe shared with the media adapter before starting support."""
 import json
+import re
 from pathlib import Path
 import subprocess
 
 from configuration import ROOT
+
+
+def supported_apple_app(info):
+    """Accept Apple's 1.x app family; framework contracts are checked separately."""
+    if not isinstance(info, dict):
+        return False
+    version = info.get('CFBundleShortVersionString')
+    build = info.get('CFBundleVersion')
+    return (info.get('CFBundleIdentifier') == 'com.apple.ScreenContinuity'
+            and isinstance(version, str) and re.fullmatch(r'1(?:\.\d+){1,2}', version) is not None
+            and isinstance(build, str) and re.fullmatch(r'\d+(?:\.\d+)*', build) is not None)
 
 
 def inspect_media_profile(root=ROOT):
@@ -30,6 +42,6 @@ def require_media_profile(root=ROOT):
     if not report['compatible']:
         raise RuntimeError('Media profile is unsupported on this host ('
             + str(report.get('architecture')) + ', ' + str(report.get('os_build'))
-            + '). Inspect build/inspector; the supported reference is Intel build '
-            + str(report.get('reference_build')) + ' with matching framework methods')
+            + '). Mirra requires Intel macOS 15 or later with matching private '
+            'framework interfaces. Inspect build/inspector for the failed checks.')
     return report

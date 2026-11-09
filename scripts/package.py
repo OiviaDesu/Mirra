@@ -10,6 +10,7 @@ import tempfile
 
 from configuration import ROOT
 from release import release_info
+from deployment import verify_app
 
 
 def main():
@@ -22,6 +23,7 @@ def main():
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     if (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion')) != (release['version'], release['build']):
         raise RuntimeError('Rebuild Mirra.app before packaging this release')
+    deployment = verify_app(app)
     filename = 'Mirra-' + release['tag'] + '.' + args.format
     subprocess.run(['/usr/bin/codesign', '--verify', '--strict', str(app)], check=True)
     destination = ROOT / 'dist/app'
@@ -53,7 +55,9 @@ def main():
             archive.rename(output)
     print(json.dumps({'archive': str(output), 'sha256': checksum, 'app': str(app),
                       'version': release['version'], 'build': release['build'], 'format': args.format,
-                      'published': False, 'notarized': False}, indent=2))
+                      'published': False, 'notarized': False,
+                      'minimum_macos': deployment['minimum_macos'],
+                      'verified_macos_binaries': len(deployment['binaries'])}, indent=2))
 
 
 if __name__ == '__main__':

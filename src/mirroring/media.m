@@ -44,8 +44,9 @@ static void media_log(const char *format, ...) {
 }
 
 extern NW_RETURNS_RETAINED nw_interface_t nw_interface_create_with_index(uint32_t);
-// Verified two-argument wrapper in this build: endpoint, parameters. The
-// returned evaluator is an ARC-managed Network object with create ownership.
+// Endpoint/parameters wrapper, inspected on the reference build and linked
+// against the Sequoia SDK as well. Create ownership is retained. Symbol checks
+// alone do not establish behavior on every macOS release; see the probe report.
 extern NW_RETURNS_RETAINED id nw_path_create_evaluator_for_endpoint(nw_endpoint_t, nw_parameters_t);
 
 #define INTERPOSE(REPLACEMENT, ORIGINAL) \

@@ -7,6 +7,10 @@ the required private framework stubs. The Python tools use the standard library.
 The host and framework restrictions are listed in
 [Compatibility](../README.md#compatibility).
 
+All macOS components target Intel `x86_64` and macOS 15.0, including the interface,
+password helper and injected adapters. The iPhone endpoint separately targets
+arm64 iOS 15. The deployment target is independent of the SDK used to build.
+
 ## Build the app
 
 ```sh
@@ -16,6 +20,23 @@ make app
 This builds the native interface, adapters, phone endpoint and SSH password
 helper. The app is available at `build/Mirra.app`. Completed builds are retained
 under `build/versions.noindex`; the app shortcut points to the latest build.
+
+To select an installed SDK explicitly:
+
+```sh
+make app SDK=/path/to/MacOSX.sdk
+```
+
+Changing the SDK or compiler target rebuilds the native components. The app builder
+and packager verify every bundled macOS binary, including Python and its libraries,
+and reject a minimum OS newer than 15.0. Run the same audit manually with:
+
+```sh
+python3 scripts/deployment.py --app build/Mirra.app
+```
+
+These checks verify the binary deployment target. Private framework behavior and
+Mirroring connections still need testing on each supported configuration.
 
 The builder downloads a pinned CPython runtime and its upstream notices.
 `config/python.json` records archive URLs and checksums. Verified downloads are
@@ -74,6 +95,7 @@ Run the checks appropriate to the change:
 | `make authorization` | SSH password helper and secure input channel |
 | `make keystore` | Bridge protocol and owned-session cleanup |
 | `make media` | Media hook behavior and incompatible-interface rejection |
+| `make compatibility` | macOS version and architecture acceptance |
 | `make decoder` | Decoder option filtering, stream metadata and argument preservation |
 | `make certificate` | Certificate API handling using isolated fixtures |
 

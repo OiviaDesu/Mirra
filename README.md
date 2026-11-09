@@ -79,13 +79,16 @@ support running. See the [app guide](docs/App.md) for details.
 
 ## Compatibility
 
-Mirra uses private macOS interfaces and currently accepts the following host
-and app versions. Unsupported host builds are rejected by the compatibility check.
+Mirra targets Intel macOS 15 or later. It checks the required private framework
+interfaces before starting support; an OS version alone does not establish
+compatibility. Sequoia support is experimental and still needs a live connection
+test. The verified reference remains macOS 26.7.2 (`25G332`) with iPhone Mirroring
+1.6 (`98.5`).
 
 | Component | Requirement |
 | --- | --- |
-| Host | Intel `x86_64`, macOS 26.7.2 (`25G332`) |
-| Apple app | iPhone Mirroring 1.6 (`98.5`) |
+| Host | Intel `x86_64`, macOS 15 or later with compatible private interfaces |
+| Apple app | Apple's installed iPhone Mirroring 1.x system app |
 | Bridge | Compatible jailbroken iPhone with OpenSSH and `ldid`; see [Bridge compatibility](docs/Bridges.md) |
 | Target iPhone | Meets [Apple's iPhone Mirroring requirements](https://support.apple.com/en-us/120421) |
 | Wi-Fi | Working AWDL support |

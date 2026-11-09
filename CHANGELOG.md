@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Target Intel macOS 15 or later for the app and every bundled macOS helper.
+  Verify binary deployment targets during app building and packaging.
+- Allow experimental Sequoia setup with Apple's Mirroring 1.x app when the
+  required private interfaces match. Keep the tested Tahoe decoder policy.
 - Apply automatic decoder compatibility to Display P3/FLS H.264 streams on the
   supported Intel build, regardless of Mac model. This addresses connection
   failures where video arrives but decoder creation repeatedly returns `-8969`.

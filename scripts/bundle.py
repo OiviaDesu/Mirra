@@ -15,6 +15,7 @@ from installation import PACKAGE_ADAPTERS, HOST_TOOLS
 from distribution import source_payload
 from interpreter import build_runtime, copy_runtime
 from release import release_info
+from deployment import compiler_flags, verify_app, MINIMUM_MACOS
 
 
 def main():
@@ -61,14 +62,14 @@ def main():
     embedded = support / 'python'
     for path in [*embedded.rglob('*'), embedded]:
         path.chmod(path.stat().st_mode & ~0o222)
-    subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
+    subprocess.run(['xcrun', 'clang', *compiler_flags(), '-fobjc-arc', '-fblocks', '-Wall', '-Wextra', '-Werror',
                     '-framework', 'AppKit', str(ROOT / 'src/app/app.m'), str(ROOT / 'src/app/wizard.m'), str(ROOT / 'src/app/interface.m'), str(ROOT / 'src/app/logs.m'), str(ROOT / 'src/app/alerts.m'), str(ROOT / 'src/app/authorization.m'), '-o', str(executable)], check=True)
     password = executable.parent / 'password'
-    subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-Wall', '-Wextra', '-Werror', '-framework', 'AppKit',
+    subprocess.run(['xcrun', 'clang', *compiler_flags(), '-fobjc-arc', '-Wall', '-Wextra', '-Werror', '-framework', 'AppKit',
                     str(ROOT / 'src/app/password.m'), '-o', str(password)], check=True)
     subprocess.run(['codesign', '--force', '--sign', '-', str(password)], check=True)
     artwork = build / 'artwork'
-    subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-Wall', '-Wextra', '-Werror', '-framework', 'AppKit',
+    subprocess.run(['xcrun', 'clang', *compiler_flags(), '-fobjc-arc', '-Wall', '-Wextra', '-Werror', '-framework', 'AppKit',
                     str(ROOT / 'src/app/artwork.m'), '-o', str(artwork)], check=True)
     icons = build / 'Mirra.iconset'
     subprocess.run([str(artwork), str(icons)], check=True)
@@ -77,10 +78,11 @@ def main():
             'CFBundleName': 'Mirra', 'CFBundleDisplayName': 'Mirra',
             'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': release['version'], 'CFBundleVersion': release['build'],
             'CFBundleIconFile': 'Mirra.icns',
-            'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '15.0',
+            'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': MINIMUM_MACOS,
             'SupportPython': 'Support/python/bin/python3'}
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     (support / 'manifest.json').write_text(json.dumps({'files': files}, indent=2) + '\n')
+    deployment = verify_app(app)
     subprocess.run(['codesign', '--force', '--sign', '-', str(app)], check=True)
     subprocess.run(['codesign', '--verify', '--strict', str(app)], check=True)
     # Each build gets a separate reviewable path; never replace an open app.
@@ -94,7 +96,8 @@ def main():
     os.replace(temporary_link, link)
     print(json.dumps({'app': str(link), 'version': str(destination / app.name), 'bundled_project_files': len(files),
                       'device_credentials_included': False, 'bundled_python': info['SupportPython'],
-                      'requires_existing_python': False}, indent=2))
+                      'requires_existing_python': False, 'minimum_macos': MINIMUM_MACOS,
+                      'verified_macos_binaries': len(deployment['binaries'])}, indent=2))
 
 
 if __name__ == '__main__':

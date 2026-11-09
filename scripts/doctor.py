@@ -10,7 +10,7 @@ import subprocess
 import sys
 from configuration import ConfigError,load_config,ROOT
 from usbmux import list_devices,product_type,select_device
-from compatibility import inspect_media_profile
+from compatibility import inspect_media_profile, supported_apple_app
 
 
 def inspect_host(config):
@@ -22,7 +22,7 @@ def inspect_host(config):
     try:
         info = plistlib.loads((config.system_app/'Contents/Info.plist').read_bytes())
         version = (info.get('CFBundleShortVersionString'),info.get('CFBundleVersion'))
-        add('app_build',version==('1.6','98.5'),f'Installed {version[0]} ({version[1]}); verified reference is 1.6 (98.5)')
+        add('app_build',supported_apple_app(info),f'Installed {version[0]} ({version[1]}); requires Apple’s 1.x system app and matching framework interfaces')
     except (OSError,ValueError,plistlib.InvalidFileException):
         add('app_build',False,'System iPhone Mirroring app is unavailable')
     for name,path in [('ssh_account',config.user_file),('ssh_key',config.identity_file),

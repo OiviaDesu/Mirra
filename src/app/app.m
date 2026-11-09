@@ -476,7 +476,7 @@
             @[@"3. Connect",@"Choose Connect on Mirra’s home screen. Apple’s iPhone Mirroring opens for authentication and your live screen."],
             @[@"If it takes too long",@"Check that the setup phone is online, then use Refresh in Settings. If Apple’s app times out, let that attempt finish before trying again."]];
         for (NSArray *row in rows) [self addRow:row[0] detail:row[1] buttons:@[] to:self.help];
-        NSTextField *scope = MirraLabel(@"Verified reference: Intel macOS 26.7.2 and iPhone Mirroring 1.6. Other configurations still need verification.",12,NSFontWeightRegular); scope.textColor = NSColor.secondaryLabelColor; MirraAdd(self.help,scope);
+        NSTextField *scope = MirraLabel(@"Requires Intel macOS 15 or later with compatible system interfaces. Support is experimental and depends on your configuration.",12,NSFontWeightRegular); scope.textColor = NSColor.secondaryLabelColor; MirraAdd(self.help,scope);
     }
     [self navigate:@"help" push:YES];
 }

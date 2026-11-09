@@ -144,8 +144,17 @@ class OnboardingTests(unittest.TestCase):
             create.assert_not_called()
         result = self.wizard.failure(None, 'begin', caught.exception)
         self.assertEqual(result['error_code'], 'unsupported_host')
-        self.assertIn('25G332', result['error'])
+        self.assertIn('macOS 15 or later', result['error'])
         self.assertFalse(self.wizard.active.exists())
+
+    def test_sequoia_app_can_pass_setup_when_host_interfaces_match(self):
+        import plistlib
+        del self.wizard.host_check
+        info = {'CFBundleIdentifier': 'com.apple.ScreenContinuity',
+                'CFBundleShortVersionString': '1.0', 'CFBundleVersion': '1'}
+        with patch('onboarding.inspect_media_profile', return_value={'compatible': True}), \
+                patch.object(Path, 'read_bytes', return_value=plistlib.dumps(info)):
+            self.wizard.host_check()
 
     def test_unavailable_probe_does_not_claim_the_host_is_unsupported(self):
         del self.wizard.host_check

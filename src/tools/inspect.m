@@ -3,7 +3,7 @@
 
 int main(void) {
     @autoreleasepool {
-        NSDictionary *report = MirroringMediaCompatibilityReport();
+        NSDictionary *report = MirroringHostCompatibilityReport();
         NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
         if (!json) return 2;
         fwrite(json.bytes, 1, json.length, stdout);

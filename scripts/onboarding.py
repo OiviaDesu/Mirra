@@ -10,7 +10,7 @@ import secrets
 import subprocess
 
 from provisioning import new_profile, fingerprints, pin_host, authorize, deploy, destination, remote, RemoteSetupError, signing_tool, verify_key
-from compatibility import inspect_media_profile
+from compatibility import inspect_media_profile, supported_apple_app
 from configuration import ROOT, load_config
 from installation import NativeService
 from state import write_state
@@ -21,10 +21,10 @@ import activity
 
 
 SETUP_MESSAGES = {
-    'unsupported_host': 'This Mac or its system frameworks are not supported by this Mirra build. It requires Intel macOS 26.7.2 (25G332). See the compatibility section in the setup guide before continuing.',
+    'unsupported_host': 'This Mac or its system frameworks are not supported by this Mirra build. It requires Intel macOS 15 or later with compatible private interfaces. Keep the diagnostics for compatibility review.',
     'host_check_unavailable': 'Mirra could not check this Mac. Reopen a complete copy of Mirra and retry. If the check still fails, keep the diagnostics for review.',
     'app_unavailable': 'Apple’s iPhone Mirroring app could not be read. Check that it is installed in System Applications before continuing.',
-    'unsupported_app': 'This version of Apple’s iPhone Mirroring is not supported by this Mirra build. It requires version 1.6 (98.5). See the setup guide for compatibility requirements.',
+    'unsupported_app': 'This copy of Apple’s iPhone Mirroring is not supported by this Mirra build. It requires the original system app from the 1.x version family. Keep the diagnostics for compatibility review.',
     'missing_ldid': 'SSH access works, but Mirra could not find the phone’s signing tool, ldid. Install ldid using the bridge’s jailbreak package manager, then choose Authorize SSH again.',
     'keystore_library_unavailable': 'The bridge cannot load Apple’s keystore library. Keep the setup diagnostics and report its iOS version and jailbreak for compatibility review.',
     'required_keystore_symbols_unavailable': 'The bridge is missing keystore functions needed by Mirra. The setup diagnostics list the missing functions. Report its iOS version and jailbreak for compatibility review.',
@@ -93,7 +93,7 @@ class SetupWizard:
                 raise ValueError('Invalid application metadata')
         except (OSError, ValueError, plistlib.InvalidFileException) as error:
             raise SetupIssue('app_unavailable') from error
-        if (info.get('CFBundleShortVersionString'), info.get('CFBundleVersion')) != ('1.6', '98.5'):
+        if not supported_apple_app(info):
             raise SetupIssue('unsupported_app')
 
     def defaults(self):

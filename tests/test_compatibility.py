@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from compatibility import inspect_media_profile, require_media_profile
+from compatibility import inspect_media_profile, require_media_profile, supported_apple_app
 
 
 class MediaCompatibilityTests(unittest.TestCase):
@@ -41,3 +41,16 @@ class MediaCompatibilityTests(unittest.TestCase):
     def test_missing_probe_has_an_actionable_build_error(self):
         with self.assertRaisesRegex(RuntimeError, 'make build'):
             require_media_profile(self.root / 'absent')
+
+    def test_sequoia_and_tahoe_app_versions_use_the_same_identity_check(self):
+        for version, build in [('1.0', '1'), ('1.3', '40.2'), ('1.6', '98.5')]:
+            self.assertTrue(supported_apple_app({'CFBundleIdentifier': 'com.apple.ScreenContinuity',
+                'CFBundleShortVersionString': version, 'CFBundleVersion': build}))
+
+    def test_missing_identity_and_unreviewed_app_family_are_rejected(self):
+        valid = {'CFBundleIdentifier': 'com.apple.ScreenContinuity',
+                 'CFBundleShortVersionString': '1.6', 'CFBundleVersion': '98.5'}
+        for replacement in ({'CFBundleIdentifier': 'other.app'}, {'CFBundleIdentifier': None},
+                            {'CFBundleShortVersionString': '2.0'}, {'CFBundleShortVersionString': 1},
+                            {'CFBundleVersion': ''}, {'CFBundleVersion': None}):
+            self.assertFalse(supported_apple_app(dict(valid, **replacement)))

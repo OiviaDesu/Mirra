@@ -32,7 +32,8 @@ The app includes compiled helpers, a Python runtime and upstream notices, but
 no saved bridge credentials.
 
 The packager checks the app signature before and after staging and verifies
-the disk image with `hdiutil`. It prints the path and SHA-256. To produce an
+that every bundled macOS binary supports the declared macOS 15.0 minimum. It
+verifies the disk image with `hdiutil` and prints the path and SHA-256. To produce an
 optional ZIP after building:
 
 ```sh

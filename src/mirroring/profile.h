@@ -13,5 +13,7 @@ typedef NS_ENUM(NSUInteger, MirroringMediaMethod) {
 };
 
 NSDictionary *MirroringMediaCompatibilityReport(void);
+NSDictionary *MirroringHostCompatibilityReport(void);
+BOOL MirroringMediaHostSupported(NSString *architecture, NSString *version);
 Method MirroringMediaRequiredMethod(MirroringMediaMethod entry);
 BOOL MirroringInstallMediaProfile(void);

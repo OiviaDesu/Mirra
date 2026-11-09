@@ -26,7 +26,7 @@ from state import write_state
 from lifetime import add_lifetime_arguments,duration_from_arguments,deadline_for,emit_event
 from logs import BoundedLogs,open_append
 from retention import track,retire,prune
-from compatibility import require_media_profile
+from compatibility import require_media_profile, supported_apple_app
 from decoder import DecoderRoute
 
 
@@ -58,8 +58,8 @@ def main():
     if subprocess.run(['pgrep','-x','iPhone Mirroring'],capture_output=True).returncode==0:
         parser.error('Close the existing Mirroring app before starting a native session')
     info=plistlib.loads((config.system_app/'Contents/Info.plist').read_bytes())
-    if (info.get('CFBundleShortVersionString'),info.get('CFBundleVersion'))!=('1.6','98.5'):
-        parser.error('This native adapter has only been inspected for app 1.6 (98.5)')
+    if not supported_apple_app(info):
+        parser.error('This adapter requires Apple’s original iPhone Mirroring 1.x system app')
     executable=config.system_app/'Contents/MacOS/iPhone Mirroring'
     subprocess.run(['codesign','--verify','--strict',str(config.system_app)],capture_output=True,check=True)
     adapters=[ROOT/'build/sockets.dylib',ROOT/'build/media.dylib',ROOT/'build/keystore.dylib']

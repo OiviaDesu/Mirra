@@ -6,11 +6,13 @@ stream's color metadata and decoder options, not the Mac model or display settin
 
 ## Automatic selection
 
-On the supported Intel build `25G332`, native support loads the compatibility
+On the inspected Intel build `25G332`, native support loads the compatibility
 hook. It removes `NegotiationDetails` only for H.264 streams whose options contain
 `FLS` and whose SPS identifies Display P3 (color primaries 12). Other streams and
 options pass through unchanged. The selected policy and actual decoder results
 are recorded in the logs. Uninspected architectures and builds use the normal route.
+This includes macOS 15: accepting a host's media interfaces does not automatically
+enable a decoder hook that has not been inspected on that OS.
 
 The advanced `host.decoder_route` setting accepts:
 
