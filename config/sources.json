@@ -129,6 +129,7 @@
     "src/tools/inspect.m",
     "tests/authorization.m",
     "tests/certificate.m",
+    "tests/decoder.m",
     "tests/checkkeystore.py",
     "tests/checkmedia.py",
     "tests/endpoint.m",

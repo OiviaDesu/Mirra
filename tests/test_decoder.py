@@ -22,18 +22,25 @@ DESKTOP = dict(LAPTOP, model='MacPro7,1')
 
 
 class ProfileTests(unittest.TestCase):
-    def test_verified_laptop_keeps_normal_decoder(self):
+    def test_supported_laptop_checks_actual_stream(self):
         value = decoder.select_route('auto', LAPTOP)
-        self.assertFalse(value['enabled'])
-        self.assertEqual(value['mode'], 'normal')
+        self.assertTrue(value['enabled'])
+        self.assertEqual(value['policy'], 'fls_p3')
 
     def test_verified_partner_host_uses_no_fls_route(self):
         self.assertTrue(decoder.select_route('auto', DESKTOP)['enabled'])
 
-    def test_unverified_model_or_os_does_not_enable_automatically(self):
-        for host in (dict(DESKTOP, build='different'), dict(DESKTOP, architecture='arm64'),
-                     dict(DESKTOP, model='iMac20,1')):
+    def test_uninspected_abi_does_not_enable_automatically(self):
+        for host in (dict(DESKTOP, build='different'), dict(DESKTOP, architecture='arm64')):
             self.assertFalse(decoder.select_route('auto', host)['enabled'])
+
+    def test_model_name_does_not_decide_stream_compatibility(self):
+        value = decoder.select_route('auto', dict(LAPTOP, model='iMac20,1'))
+        self.assertTrue(value['enabled'])
+        self.assertEqual(value['policy'], 'fls_p3')
+
+    def test_explicit_route_preserves_unconditional_h264_policy(self):
+        self.assertEqual(decoder.select_route('no_fls', LAPTOP)['policy'], 'all_h264')
 
     def test_explicit_normal_route_overrides_automatic_selection(self):
         self.assertFalse(decoder.select_route('normal', DESKTOP)['enabled'])
@@ -69,7 +76,7 @@ class RouteLifecycleTests(unittest.TestCase):
             p.start(); self.addCleanup(p.stop)
 
     def test_normal_start_and_close_do_not_inspect_or_mutate_avconference(self):
-        instance = decoder.DecoderRoute(self.root, self.directory, host=LAPTOP)
+        instance = decoder.DecoderRoute(self.root, self.directory, host=LAPTOP, mode='normal')
         with patch.object(route, 'acquire') as acquire, patch.object(route, 'ctl') as command, \
              patch.object(route, 'DecoderJob') as job:
             state = instance.start()
@@ -90,7 +97,9 @@ class RouteLifecycleTests(unittest.TestCase):
                 fake.owned = lambda: dict(old_owned(), pid=os.getpid())
                 super().__init__(stage, fake)
                 fake_holder.append(fake)
-            def prepare(self, library):
+            def prepare(self, library, *, policy='all_h264'):
+                if policy != 'fls_p3':
+                    raise AssertionError('Automatic policy was not passed to AVConference')
                 for name in ('stdout.log', 'stderr.log'):
                     (self.stage / name).touch(mode=0o600)
                 return {'decoder_hook_sha256': 'simulated fixture'}
@@ -160,6 +169,64 @@ class RouteLifecycleTests(unittest.TestCase):
             self.assertTrue(result['recovered_by_supervisor'])
         finally:
             if instance.lock is not None: instance.close()
+
+    def test_idle_and_reloaded_decoder_keep_registration_and_bridge_session(self):
+        instance, calls = self.simulated_controller()
+        try:
+            instance.start()
+            before = len(calls[0].calls)
+            calls[0].current.pop('pid')
+            calls[0].current['state'] = 'not running'
+            instance.poll()
+            self.assertTrue(instance.ready)
+            self.assertIsNone(instance.pid)
+            self.assertEqual(instance.observation, 'idle')
+            pid = os.getpid() + 100000
+            birth = (pid, os.getuid(), 2000, 1)
+            calls[0].current.update(pid=pid, state='running')
+            with patch('decoder.process_birth', return_value=birth):
+                instance.poll()
+                self.assertFalse(instance.ready)
+                self.assertEqual(instance.observation, 'starting')
+                with (instance.stage / 'stderr.log').open('a') as log:
+                    log.write(f'MIRRA_DECODER_HOOK_READY pid={pid} version=1\n')
+                instance.poll()
+                self.assertTrue(instance.ready)
+                self.assertEqual(instance.pid, pid)
+            self.assertTrue(all(call[0] == 'print' for call in calls[0].calls[before:]))
+        finally:
+            instance.close()
+
+    def test_observation_failure_defers_without_unloading_support(self):
+        instance, calls = self.simulated_controller()
+        try:
+            instance.start()
+            before = len(calls[0].calls)
+            calls[0].fail = 'query'
+            instance.poll()
+            self.assertFalse(instance.ready)
+            self.assertEqual(instance.observation, 'unknown')
+            calls[0].fail = None
+            instance.poll()
+            self.assertTrue(instance.ready)
+            self.assertTrue(all(call[0] == 'print' for call in calls[0].calls[before:]))
+        finally:
+            calls[0].fail = None
+            instance.close()
+
+    def test_reused_decoder_pid_waits_for_fresh_hook_marker(self):
+        instance, _ = self.simulated_controller()
+        try:
+            instance.start()
+            old = instance.ready_pids[os.getpid()]
+            with patch('decoder.process_birth', return_value=(*old[:3], old[3] + 1)):
+                instance.poll()
+                self.assertFalse(instance.ready)
+                self.assertEqual(instance.observation, 'starting')
+            instance.poll()
+            self.assertTrue(instance.ready)
+        finally:
+            instance.close()
 
     def test_foreign_avconference_is_preserved_and_cleanup_failure_is_reported(self):
         instance, calls = self.simulated_controller()

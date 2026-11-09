@@ -3,7 +3,7 @@ SHELL := /bin/bash
 BUILD := build
 SDK := $(shell xcrun --sdk macosx --show-sdk-path)
 
-.PHONY: help build endpoint proxy start doctor devices test media keystore interface certificate native support features app package
+.PHONY: help build endpoint proxy start doctor devices test media keystore interface certificate decoder native support features app package
 help:
 	@printf '%s\n' 'make build           Build the macOS adapters.' 'make endpoint        Build the arm64 endpoint; signing occurs during backend setup.' 'make proxy       Forward the configured USB backend SSH connection.' 'make support  Prepare normal launches of the original Mirroring app for up to 30 minutes.' 'make native          Start the original app with the custom launch command.' 'make doctor          Inspect configured prerequisites.' 'make features Inspect notification settings and the iPhone-app catalog.' 'make test            Run regression tests.'
 
@@ -108,6 +108,12 @@ support: build $(BUILD)/sockets.dylib $(BUILD)/launch.dylib $(BUILD)/decoder-rou
 $(BUILD)/decoder-route.dylib: src/mirroring/decoder-route.m | $(BUILD)/.dir
 	xcrun clang -dynamiclib -fobjc-arc -Wall -Wextra -Werror -F "$(SDK)/System/Library/PrivateFrameworks" -framework Foundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo -framework VideoProcessing "$<" -o "$@"
 	codesign --force --sign - "$@"
+
+$(BUILD)/decoderprobe: tests/decoder.m src/mirroring/decoder-route.m | $(BUILD)/.dir
+	xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation -framework VideoToolbox -framework CoreMedia -framework CoreVideo "$<" -o "$@"
+
+decoder: $(BUILD)/decoderprobe
+	$(BUILD)/decoderprobe
 
 $(BUILD)/password: src/app/password.m src/app/channel.h | $(BUILD)/.dir
 	xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework AppKit src/app/password.m -o "$@"

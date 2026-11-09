@@ -197,7 +197,8 @@ class RestoreTests(unittest.TestCase):
             self.job.prepare(library)
         definition = plistlib.loads((self.stage / 'job.plist').read_bytes())
         self.assertEqual(definition['MachServices'], {'private.test.endpoint': True})
-        self.assertEqual(definition['EnvironmentVariables'], {'EXISTING':'kept','MIRRA_NO_FLS':'1'})
+        self.assertEqual(definition['EnvironmentVariables'],
+                         {'EXISTING':'kept', 'MIRRA_NO_FLS':'1', 'MIRRA_DECODER_POLICY':'all_h264'})
         self.assertIn('--option', (self.stage / 'wrapper').read_text())
 
 

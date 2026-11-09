@@ -49,6 +49,19 @@ class NativeServiceTests(unittest.TestCase):
         with patch('installation.subprocess.run', return_value=subprocess.CompletedProcess([], 0)):
             return self.service.prepare(self.config)
 
+    def test_status_uses_current_decoder_observation_instead_of_startup_ready(self):
+        run = self.service.package / 'runtime/native-fixture'
+        run.mkdir(parents=True, mode=0o700)
+        birth = (42, os.getuid(), 100, 1)
+        write_state(self.service.state, {'phase': 'running', 'directory': str(run),
+            'supervisor_birth': birth, 'decoder_route': {'enabled': True, 'ready': True}})
+        with patch.object(self.service, 'registration', return_value={}), \
+                patch('installation.process_birth', return_value=birth):
+            self.assertFalse(self.service.status()['native_launch_support_ready'])
+            for value, expected in (({'ready': True}, True), ({'ready': False}, False), ([], False)):
+                write_state(run / 'decoder-route.json', value)
+                self.assertEqual(self.service.status()['native_launch_support_ready'], expected)
+
     def test_package_uses_private_stable_files_and_excludes_apple_apps(self):
         self.prepare()
         value = self.service.validate_package()

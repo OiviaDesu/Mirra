@@ -97,12 +97,16 @@ static OSStatus routedCreate(CFAllocatorRef allocator, CMVideoFormatDescriptionR
     NSDictionary *original = (__bridge NSDictionary *)specification;
     NSMutableDictionary *adapted = nil;
     id details = original[@"NegotiationDetails"];
-    if (details) {
+    BOOL fls = [details isKindOfClass:NSString.class] &&
+        [(NSString *)details rangeOfString:@"FLS"].location != NSNotFound;
+    int colourPrimaries = primaries(format);
+    const char *policy = getenv("MIRRA_DECODER_POLICY");
+    BOOL automatic = policy && !strcmp(policy, "fls_p3");
+    BOOL knownPolicy = !policy || !strcmp(policy, "all_h264") || automatic;
+    if (details && knownPolicy && (!automatic || (fls && colourPrimaries == 12))) {
         adapted = [original mutableCopy];
         [adapted removeObjectForKey:@"NegotiationDetails"];
     }
-    BOOL fls = [details isKindOfClass:NSString.class] &&
-        [(NSString *)details rangeOfString:@"FLS"].location != NSNotFound;
     unsigned index = atomic_fetch_add(&creates, 1) + 1;
     OSStatus status = VCPDecompressionSessionCreate(allocator, format,
         adapted ? (__bridge CFDictionaryRef)adapted : specification, attributes, callback, session);
@@ -119,7 +123,7 @@ static OSStatus routedCreate(CFAllocatorRef allocator, CMVideoFormatDescriptionR
     char message[512];
     snprintf(message, sizeof message,
         "MIRRA_DECODER_ROUTE create=%u removed=%d had_fls=%d colour_primaries=%d width=%d height=%d status=%d hardware_query=%d using_hardware=%d secondary_bitfield=%d secondary_flb=%d",
-        index, adapted != nil, fls, primaries(format), size.width, size.height, (int)status,
+        index, adapted != nil, fls, colourPrimaries, size.width, size.height, (int)status,
         (int)query, usingHardware, original[@"NegotiationDetailsBitField"] != nil, original[@"NegotiatedFLB"] != nil);
     record(message);
     return status;

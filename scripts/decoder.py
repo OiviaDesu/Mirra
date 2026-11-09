@@ -20,7 +20,6 @@ from lifetime import emit_event
 from redaction import redact_text, redact_value
 
 INSPECTED_BUILD = '25G332'
-FLS_HOSTS = frozenset({'MacPro7,1'})
 
 
 def host_profile():
@@ -33,17 +32,18 @@ def host_profile():
 
 
 def select_route(mode, host):
-    """Auto covers the tested Mac Pro; other hosts keep Apple's normal route."""
+    """Select by inspected ABI; auto filters the actual stream in the hook."""
     if mode not in ('auto', 'normal', 'no_fls'):
         raise ValueError('Unknown decoder route setting')
     compatible = host.get('architecture') == 'x86_64' and host.get('build') == INSPECTED_BUILD
-    enabled = mode == 'no_fls' or (mode == 'auto' and compatible and host.get('model') in FLS_HOSTS)
+    enabled = mode == 'no_fls' or (mode == 'auto' and compatible)
     if enabled and not compatible:
         raise RuntimeError('The decoder route has been inspected for Intel macOS build 25G332 only')
     reason = ('explicit decoder route' if mode != 'auto' else
-              'verified Mac Pro FLS compatibility' if enabled else 'normal decoder for this host')
+              'automatic Display P3/FLS compatibility' if enabled else 'normal decoder for this host')
     return {'requested': mode, 'mode': 'no_fls' if enabled else 'normal',
-            'enabled': enabled, 'host': dict(host), 'reason': reason}
+            'enabled': enabled, 'policy': 'fls_p3' if mode == 'auto' else 'all_h264',
+            'host': dict(host), 'reason': reason}
 
 
 def read_json(path):
@@ -68,6 +68,7 @@ class DecoderRoute:
         self.ready = False
         self.pid = None
         self.metadata = {}
+        self.observation = 'starting'
 
     def record(self, message, level='info', **fields):
         with capture(self.log):
@@ -92,7 +93,7 @@ class DecoderRoute:
     def start(self):
         self.record('Selected decoder route', **self.decision)
         if not self.decision['enabled']:
-            # Ordinary laptop startup does not inspect or restart AVConference.
+            # Explicit normal mode does not inspect or restart AVConference.
             # A journal from an interrupted diagnostic still needs restoration.
             if route.JOURNAL.exists():
                 self.record('Recovering an earlier decoder session')
@@ -114,7 +115,8 @@ class DecoderRoute:
         self.job = route.DecoderJob(self.stage)
         self.job.require_idle()
         self.record('Verified that original AVConference is idle')
-        self.metadata = self.job.prepare(self.root / 'build/decoder-route.dylib')
+        self.metadata = self.job.prepare(self.root / 'build/decoder-route.dylib',
+                                         policy=self.decision['policy'])
         route.write_json(self.stage / 'metadata.json', self.metadata)
         birth = process_birth(os.getpid())
         if birth is None:
@@ -159,6 +161,7 @@ class DecoderRoute:
             for fd, name in ((1, 'stdout.log'), (2, 'stderr.log')):
                 self.log_limits.watch_native(self.stage / name, self.pid, fd)
         self.ready = True
+        self.observation = 'ready'
         self.record('Decoder route is ready', pid=self.pid, **self.metadata)
         return self.save()
 
@@ -208,21 +211,46 @@ class DecoderRoute:
         if changed:
             self.save()
 
+    def availability(self, observation, pid=None):
+        ready = observation in ('ready', 'idle')
+        if (observation, pid, ready) == (self.observation, self.pid, self.ready):
+            return
+        self.observation, self.pid, self.ready = observation, pid, ready
+        messages = {'ready': 'AVConference loaded the decoder route',
+                    'idle': 'AVConference is idle; decoder support remains registered',
+                    'starting': 'Waiting for AVConference to load the decoder route',
+                    'unknown': 'Decoder observation deferred; support remains registered'}
+        self.record(messages[observation], pid=pid)
+        self.save(observation=observation)
+
     def poll(self):
         if not self.decision['enabled']:
             return
-        self.drain_native()
         if self.guardian.poll() is not None or (self.stage / 'restored.json').exists():
             raise RuntimeError('The decoder guardian ended before native support stopped')
-        current = self.job.state()
-        pid = current.get('pid')
-        if (not self.job.owned(current) or pid not in self.ready_pids
-                or process_birth(pid) != self.ready_pids[pid]):
-            raise RuntimeError('The active decoder route could not be verified')
-        if pid != self.pid:
-            self.pid = pid
-            self.record('AVConference reloaded the decoder route', pid=pid)
-            self.save()
+        try:
+            self.drain_native()
+            current = self.job.state()
+            pid = current.get('pid')
+            birth = process_birth(pid) if type(pid) is int and pid > 0 else None
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+            self.availability('unknown')
+            return
+        if not current:
+            self.availability('unknown')
+            return
+        if not self.job.owned(current):
+            raise RuntimeError('AVConference changed to another configuration')
+        # Launchd may leave the registered service idle or launch a new process
+        # on demand. Keep the bridge and registration intact while its fresh
+        # hook marker arrives; stale PIDs and unavailable observations are not
+        # evidence that the entire native support session must be torn down.
+        if pid is None and current.get('state') in ('not running', 'exited'):
+            self.availability('idle')
+        elif birth is None or self.ready_pids.get(pid) != birth:
+            self.availability('starting', pid)
+        else:
+            self.availability('ready', pid)
 
     def close(self):
         self.ready = False

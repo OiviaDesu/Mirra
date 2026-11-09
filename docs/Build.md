@@ -74,6 +74,7 @@ Run the checks appropriate to the change:
 | `make authorization` | SSH password helper and secure input channel |
 | `make keystore` | Bridge protocol and owned-session cleanup |
 | `make media` | Media hook behavior and incompatible-interface rejection |
+| `make decoder` | Decoder option filtering, stream metadata and argument preservation |
 | `make certificate` | Certificate API handling using isolated fixtures |
 
 Native UI tests run as a temporary app through LaunchServices. Device-facing

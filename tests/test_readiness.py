@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from installation import NativeService
+from installation import NativeService, PACKAGE_SCHEMA, SUPPORT_REVISION
 from launcher import AGENT
 from state import write_state
 from readiness import observe
@@ -24,7 +24,8 @@ class SupportStatusTests(unittest.TestCase):
         self.service = NativeService(self.root / 'installed', self.root)
         self.service.package.mkdir(parents=True, mode=0o700)
         write_state(self.service.package / 'config.json', {'backend': {'transport': 'ssh'}})
-        self.service.validate_package = Mock(return_value={'schema_version': 5, 'support_revision': 16})
+        self.service.validate_package = Mock(return_value={
+            'schema_version': PACKAGE_SCHEMA, 'support_revision': SUPPORT_REVISION})
         self.snapshot = {'installed': True, 'registered': True, 'login_enabled': True,
                          'supervisor_alive': True, 'native_launch_support_ready': True,
                          'backend_ready': True, 'run': 'native-test', 'backend_attempt': 1}

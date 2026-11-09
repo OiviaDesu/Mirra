@@ -28,7 +28,7 @@ HOST_TOOLS = ['inspector']
 DECODER_ADAPTERS = ['decoder-route.dylib']
 PACKAGE_ADAPTERS = ADAPTERS + DECODER_ADAPTERS
 PACKAGE_SCHEMA = 5
-SUPPORT_REVISION = 16
+SUPPORT_REVISION = 18
 
 
 class NativeService:
@@ -363,8 +363,18 @@ class NativeService:
             return value
         value['native_launch_support_ready'] = state['phase'] == 'running'
         decoder = state.get('decoder_route', {})
-        if decoder.get('enabled') and not decoder.get('ready'):
-            value['native_launch_support_ready'] = False
+        if decoder.get('enabled'):
+            # Startup state cannot establish that a later decoder process has
+            # loaded the hook. Use the supervisor's current observation.
+            decoder_path = directory / 'decoder-route.json'
+            try:
+                self.private_file(decoder_path)
+                decoder = json.loads(decoder_path.read_text())
+                decoder_ready = isinstance(decoder, dict) and decoder.get('ready') is True
+            except (OSError, ValueError, RuntimeError):
+                decoder_ready = False
+            if not decoder_ready:
+                value['native_launch_support_ready'] = False
         backend = directory / 'backend-status.json'
         if backend.exists():
             info = json.loads(backend.read_text())

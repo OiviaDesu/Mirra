@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Apply automatic decoder compatibility to Display P3/FLS H.264 streams on the
+  supported Intel build, regardless of Mac model. This addresses connection
+  failures where video arrives but decoder creation repeatedly returns `-8969`.
+- Preserve bridge support while AVConference is idle or restarting, and wait for
+  a fresh decoder hook marker before reporting an active decoder as ready.
+
 ## 0.1.0
 
 - Guided SSH and USB bridge setup, host-key verification and certificate preparation.

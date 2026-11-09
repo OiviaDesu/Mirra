@@ -138,7 +138,9 @@ class DecoderJob:
             raise RuntimeError('AVConference is active; quit iPhone Mirroring and other video calls first')
         return value
 
-    def prepare(self, library):
+    def prepare(self, library, *, policy='all_h264'):
+        if policy not in ('all_h264', 'fls_p3'):
+            raise ValueError('Unknown decoder compatibility policy')
         private(self.stage, stat.S_ISDIR)
         config = plistlib.loads(ORIGINAL.read_bytes())
         if config.get('Label') != LABEL:
@@ -161,6 +163,7 @@ class DecoderJob:
                       StandardOutPath=str(self.stage / 'stdout.log'),
                       StandardErrorPath=str(self.stage / 'stderr.log'))
         config.setdefault('EnvironmentVariables', {})['MIRRA_NO_FLS'] = '1'
+        config['EnvironmentVariables']['MIRRA_DECODER_POLICY'] = policy
         for name in ('stdout.log', 'stderr.log'):
             (self.stage / name).touch(mode=0o600, exist_ok=False)
         self.plist.write_bytes(plistlib.dumps(config))
