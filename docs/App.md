@@ -5,7 +5,8 @@ iPhone Mirroring; **Settings** contains setup, service controls and logs.
 
 ## First launch
 
-Use a separate jailbroken iPhone with OpenSSH and `ldid` as the bridge. Choose
+Use a separate jailbroken iPhone running **iOS 15 or later**, with OpenSSH and
+`ldid`, as the bridge. Choose
 Wi-Fi SSH or a USB device, then enter the account and the phone's SSH port.
 
 Setup guides you through host-key verification, SSH authorization, helper

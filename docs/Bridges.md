@@ -1,7 +1,7 @@
 # Bridge compatibility
 
-The bridge and target are separate devices. The bridge needs a jailbreak to
-run Mirra's helper; the target follows
+The bridge and target are separate devices. The bridge must run **iOS 15 or
+later** and have an active jailbreak to run Mirra's helper; the target follows
 [Apple's iPhone Mirroring requirements](https://support.apple.com/en-us/120421).
 
 ## Requirements

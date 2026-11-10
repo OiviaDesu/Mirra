@@ -10,7 +10,7 @@ A native macOS companion for Apple's iPhone Mirroring on Hackintosh.
 
 [Get started](#get-started) · [Compatibility](#compatibility) · [Screenshots](#screenshots) · [Build](#build-from-source) · [Documentation](#documentation)
 
-**Experimental · Intel macOS**
+**0.1.1 · Experimental · Intel macOS**
 
 <p>
   <a href="https://ko-fi.com/eiyuumiru"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support Mirra on Ko-fi"></a>
@@ -63,7 +63,8 @@ pairing and authentication requirements still apply.
 1. Get the app DMG from [Releases](https://github.com/eiyuumiru/Mirra/releases)
    or the maintainer.
 2. Open the DMG, drag **Mirra.app** onto **Applications**, then eject the image.
-3. Open Mirra and set up a separate jailbroken bridge with OpenSSH and `ldid`.
+3. Open Mirra and set up a separate jailbroken iPhone running **iOS 15 or later**
+   as the bridge, with OpenSSH and `ldid` installed.
    Choose Wi-Fi SSH or select the bridge's USB device and SSH port.
 4. Verify the SSH fingerprint and authorize access when prompted.
 5. Choose **Prepare connection**, then **Finish setup**.
@@ -89,7 +90,7 @@ test. The verified reference remains macOS 26.7.2 (`25G332`) with iPhone Mirrori
 | --- | --- |
 | Host | Intel `x86_64`, macOS 15 or later with compatible private interfaces |
 | Apple app | Apple's installed iPhone Mirroring 1.x system app |
-| Bridge | Compatible jailbroken iPhone with OpenSSH and `ldid`; see [Bridge compatibility](docs/Bridges.md) |
+| Bridge | Compatible jailbroken iPhone running **iOS 15 or later**, with OpenSSH and `ldid`; see [Bridge compatibility](docs/Bridges.md) |
 | Target iPhone | Meets [Apple's iPhone Mirroring requirements](https://support.apple.com/en-us/120421) |
 | Wi-Fi | Working AWDL support |
 | Video | Working H.264 VideoToolbox decoding |

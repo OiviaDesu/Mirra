@@ -3,6 +3,10 @@
 `VERSION` supplies the release version. `config/release.json` supplies internal
 bundle metadata and the repository URL. Package filenames use that version.
 
+The release version is **0.1.1**. Its source version and
+[changelog](../CHANGELOG.md#011) are prepared. Local packages can be built and
+staged for review; tagging and publication are separate steps.
+
 ## Prepare
 
 - Update the changelog and compatibility documentation for the change.
@@ -19,7 +23,10 @@ make package
 ```
 
 The command creates `Mirra-v<version>.dmg` under `dist/app` and prints its SHA-256.
-Create a checksum file for the DMG selected for the release.
+Stage the selected DMG under `dist/v<version>/` alongside `SHA256SUMS` and
+`RELEASE-NOTES.md`, following the v0.1.0 release layout. Keep internal build
+numbers out of release asset names. The internal bundle number advances once
+per release: v0.1.0 uses 31 and v0.1.1 uses 32.
 
 ## Publish
 

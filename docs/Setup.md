@@ -1,8 +1,8 @@
 # Command-line bridge setup
 
 For guided setup, open Mirra and choose **Settings → Set up Mirra**. The steps
-below provide the source checkout's CLI alternative. The bridge needs an active
-jailbreak, OpenSSH and `ldid`; see [Bridge compatibility](Bridges.md).
+below provide the source checkout's CLI alternative. The bridge needs **iOS 15
+or later**, an active jailbreak, OpenSSH and `ldid`; see [Bridge compatibility](Bridges.md).
 
 ## Create a profile
 

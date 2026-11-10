@@ -23,7 +23,8 @@ do not disable Gatekeeper globally.
 
 ## Set up the bridge
 
-Use a separate jailbroken iPhone with OpenSSH and `ldid`. Mirra verifies its SSH
+Use a separate jailbroken iPhone running **iOS 15 or later**, with OpenSSH and
+`ldid`. Mirra verifies its SSH
 identity, installs a helper and prepares the bridge's certificate. The target
 iPhone is selected through Apple's iPhone Mirroring app.
 
