@@ -76,6 +76,28 @@ os.execve('/bin/sh', ['/bin/sh', *args], os.environ)
         self.assertEqual(reply.returncode, 1)
         self.assertEqual(json.loads(reply.stdout)['error'], 'roothide_path_translation_unavailable')
 
+    def test_traditional_rootless_and_rootful_filesystem_detection(self):
+        (self.bin / 'jbroot').unlink()
+        (self.bin / 'rootfs').unlink()
+        bootstrap = self.root / 'bootstrap with spaces'
+        script = ENVIRONMENT_SCRIPT.replace('/var/jb', shlex.quote(str(bootstrap)))
+        reply = self.run_command(['/bin/sh', '-c', script])
+        self.assertEqual(reply.returncode, 0, reply.stderr)
+        self.assertNotIn('rootless', json.loads(reply.stdout))
+        (bootstrap / 'usr/bin').mkdir(parents=True)
+        reply = self.run_command(['/bin/sh', '-c', script])
+        self.assertEqual(reply.returncode, 0, reply.stderr)
+        self.assertEqual(json.loads(reply.stdout), {'path_mode': 'native',
+            'path_translation_verified': False, 'rootless': True})
+
+    def test_roothide_converters_take_priority_over_var_jb(self):
+        bootstrap = self.root / 'bootstrap'
+        (bootstrap / 'usr/bin').mkdir(parents=True)
+        script = ENVIRONMENT_SCRIPT.replace('/var/jb', shlex.quote(str(bootstrap)))
+        reply = self.run_command(['/bin/sh', '-c', script])
+        self.assertEqual(reply.returncode, 0, reply.stderr)
+        self.assertEqual(json.loads(reply.stdout)['path_mode'], 'roothide')
+
     def test_failed_or_invalid_converters_produce_a_specific_error(self):
         for body in ('import sys\nsys.exit(3)\n', 'print("not-an-absolute-root")\n', 'print("/")\n'):
             with self.subTest(body=body):

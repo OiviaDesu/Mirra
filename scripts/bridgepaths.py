@@ -1,6 +1,7 @@
 """Launch native helpers from the bridge's actual filesystem namespace."""
 
 ROOTHIDE_CODE_ROOT = '/usr/local/libexec/Mirra'
+ROOTLESS_DEPLOYMENT_ROOT = '/var/jb/var/mobile/MirraCache'
 ROOTHIDE_ENTITLEMENTS = (
     'platform-application',
     'com.apple.private.security.no-sandbox',
@@ -28,6 +29,8 @@ if command -v jbroot >/dev/null 2>&1 || command -v rootfs >/dev/null 2>&1; then
         /rootfs|/rootfs/) printf '%s\\n' '{"path_mode":"roothide","path_translation_verified":true}' ;;
         *) mirra_environment_error ;;
     esac
+elif test -d /var/jb/usr/bin; then
+    printf '%s\\n' '{"path_mode":"native","path_translation_verified":false,"rootless":true}'
 else
     printf '%s\\n' '{"path_mode":"native","path_translation_verified":false}'
 fi

@@ -37,6 +37,18 @@ Mirra searches for `ldid` on PATH and at standard rootful/rootless locations,
 including `/var/jb/usr/bin/ldid` and `/usr/bin/ldid`. Rootless paths follow the
 convention described in [Theos documentation](https://theos.dev/docs/rootless).
 
+When the standard `/var/jb/usr/bin` bootstrap is present, default deployments
+use `/var/jb/var/mobile/MirraCache/<deployment-id>` for the helper and certificate.
+Each attempt creates a new directory. Existing deployments and custom roots
+are preserved; RootHide converters retain priority and their separate code/data
+layout. No existing cache directory is replaced or redirected.
+
+This addresses the executable placement implicated by
+[issue #1](https://github.com/eiyuumiru/Mirra/issues/1). Follow-up iOS 16 bridge
+logs show the helper executing and certificate checks passing at this location.
+The iOS 15 symbol-resolution problem in issue #2 is a separate compatibility
+step. SIGKILL alone does not identify the original kernel rejection mechanism.
+
 ## Dopamine with RootHide
 
 RootHide uses a virtual bootstrap filesystem and separate locations for code

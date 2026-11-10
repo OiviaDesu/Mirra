@@ -168,16 +168,18 @@ class CertificateFlowTests(unittest.TestCase):
         self.binary = self.root / 'endpoint'; self.binary.write_bytes(b'fixture binary')
         self.certificate = b'fixture DER'; self.digest = hashlib.sha256(self.certificate).hexdigest()
 
-    def attempt(self, cached_error=None, ltk=None, path_mode='native', **options):
+    def attempt(self, cached_error=None, ltk=None, path_mode='native', rootless=False, helper_error=None, **options):
         calls = []
         inputs = []
         def command(config, arguments, data=None, timeout=20):
             calls.append(arguments)
             inputs.append((arguments, data))
             if arguments == ['sh', '-c', ENVIRONMENT_SCRIPT]:
-                return json.dumps({'path_mode': path_mode, 'path_translation_verified': path_mode == 'roothide'}).encode()
+                return json.dumps({'path_mode': path_mode, 'path_translation_verified': path_mode == 'roothide', 'rootless': rootless}).encode()
             if arguments[:2] == ['sh', '-c'] and 'mirra_signer=' in arguments[2]: return b'/var/jb/usr/bin/ldid\n'
-            if '--capabilities' in arguments: return b'{"required_symbols_available":true}'
+            if '--capabilities' in arguments:
+                if helper_error: raise helper_error
+                return b'{"required_symbols_available":true}'
             if '--export-certificate' in arguments or '--issue-certificate' in arguments:
                 if '--export-certificate' in arguments and cached_error: raise cached_error
                 return json.dumps({'certificate_exported': True, 'sha256': self.digest}).encode()
@@ -203,6 +205,31 @@ class CertificateFlowTests(unittest.TestCase):
         self.assertFalse(any('--issue-certificate' in call for call in self.calls))
         self.assertTrue(result['wire_layout_validated'])
         self.assertTrue(any(call[0] == '/var/jb/usr/bin/ldid' for call in self.calls))
+
+    def test_rootless_deployment_persists_bootstrap_paths_through_signing_and_launch(self):
+        result = self.attempt(rootless=True)
+        configured = load_config(self.root / 'ready.json')
+        self.assertTrue(configured.remote_endpoint.startswith('/var/jb/var/mobile/MirraCache/'))
+        self.assertTrue(configured.remote_certificate.startswith('/var/jb/var/mobile/MirraCache/'))
+        self.assertEqual(configured.path_mode, 'native')
+        self.assertIn(['/var/jb/usr/bin/ldid', '-S' + result['remote_directory'] + '/endpoint.plist',
+                       configured.remote_endpoint], self.calls)
+        launches = [c for c in self.calls if '--capabilities' in c or '--export-certificate' in c]
+        self.assertEqual(len(launches), 2)
+        self.assertTrue(all(configured.remote_endpoint in c for c in launches))
+        self.assertFalse(any('ln -s' in str(c) for c in self.calls))
+
+    def test_explicit_root_is_preserved_for_rootless(self):
+        result = self.attempt(rootless=True, remote_root='/custom/owned')
+        self.assertTrue(result['remote_endpoint'].startswith('/custom/owned/'))
+
+    def test_rootless_kill_does_not_publish_or_issue_certificate(self):
+        error = RemoteSetupError('Killed: 9', 'helper_terminated', {'remote_exit_status': 137})
+        with self.assertRaises(RemoteSetupError) as caught:
+            self.attempt(rootless=True, helper_error=error, issue_if_missing=True)
+        self.assertEqual(caught.exception.code, 'helper_terminated')
+        self.assertFalse((self.root / 'ready.json').exists())
+        self.assertFalse(any('--issue-certificate' in c or '--export-certificate' in c for c in self.calls))
 
     def test_roothide_separates_code_and_data_and_saves_runtime_translation(self):
         import plistlib

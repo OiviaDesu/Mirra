@@ -19,7 +19,7 @@ from configuration import ROOT, load_config
 from state import write_state
 from macho import require_ios_endpoint
 from wire import platform_ltk
-from bridgepaths import ENVIRONMENT_SCRIPT, ROOTHIDE_CODE_ROOT, ROOTHIDE_ENTITLEMENTS, helper_command
+from bridgepaths import ENVIRONMENT_SCRIPT, ROOTHIDE_CODE_ROOT, ROOTHIDE_ENTITLEMENTS, ROOTLESS_DEPLOYMENT_ROOT, helper_command
 import activity
 
 
@@ -334,6 +334,14 @@ def deploy(config, output, binary=None, remote_root='/var/mobile/Library/Caches/
     input_config = config
     environment = bridge_environment(config)
     config = replace(config, path_mode=environment['path_mode'])
+    # Traditional rootless bootstraps need executable files inside /var/jb.
+    # Keep RootHide's separate virtual code/data handling, and honor a custom
+    # deployment root. Never replace or symlink a previous installation.
+    if (config.path_mode == 'native' and environment.get('rootless') is True
+            and remote_root == '/var/mobile/Library/Caches/Mirra'):
+        remote_root = ROOTLESS_DEPLOYMENT_ROOT
+    activity.emit('Bridge', 'deployment location selected', path_mode=config.path_mode,
+                  rootless=environment.get('rootless') is True, remote_root=remote_root)
     signer = signing_tool(config)
     identifier = secrets.token_hex(8)
     remote_directory = remote_root.rstrip('/') + '/' + identifier
