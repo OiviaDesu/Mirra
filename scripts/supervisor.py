@@ -5,6 +5,7 @@ requires restoration of sharingd, release of the session lock and termination
 of the previous worker's recorded children before another worker may start.
 """
 from dataclasses import replace
+from contextlib import contextmanager
 import fcntl
 import json
 import os
@@ -26,8 +27,8 @@ from workspace import cleanup as cleanup_workspace
 from retention import track, retire, prune
 
 
-def recovery_gate(previous=None):
-    """Read-only ownership checks. Any uncertain observation defers recovery."""
+def backend_children_stopped(previous=None):
+    """Require recorded child identities to have ended before reusing their paths."""
     if previous is not None:
         path = Path(previous) / 'backend-children.json'
         if path.exists():
@@ -36,27 +37,41 @@ def recovery_gate(previous=None):
                 if not isinstance(birth, list) or len(birth) != 4:
                     raise ValueError('Invalid backend child identity')
                 if process_birth(birth[0]) == tuple(birth):
-                    return False, 'previous backend child still running'
+                    return False
+    return True
+
+
+@contextmanager
+def backend_lease():
+    """Exclude backend startup while inspecting or replacing its runtime."""
     directory = Path.home() / 'Library/Caches/Mirra'
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     with (directory / 'session.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            return False, 'backend controller still owns sharingd'
-        reply = subprocess.run(['launchctl', 'print', f'gui/{os.getuid()}/com.apple.sharingd'],
-                               capture_output=True, text=True, timeout=5)
-        if reply.returncode:
-            return False, 'sharingd restoration not yet observable'
-        values = {}
-        for line in reply.stdout.splitlines():
-            key, separator, value = line.strip().partition(' = ')
-            if separator:
-                values.setdefault(key, value)
-        if (values.get('path') != '/System/Library/LaunchAgents/com.apple.sharingd.plist'
-                or values.get('program') != '/usr/libexec/sharingd'
-                or 'DYLD_INSERT_LIBRARIES' in reply.stdout or 'MIRRA_KEYSTORE' in reply.stdout):
-            return False, 'sharingd is not in its original configuration'
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+
+
+def recovery_gate(previous=None):
+    """Read-only ownership checks. Any uncertain observation defers recovery."""
+    if not backend_children_stopped(previous):
+        return False, 'previous backend child still running'
+    try:
+        with backend_lease():
+            reply = subprocess.run(['launchctl', 'print', f'gui/{os.getuid()}/com.apple.sharingd'],
+                                   capture_output=True, text=True, timeout=5)
+            if reply.returncode:
+                return False, 'sharingd restoration not yet observable'
+            values = {}
+            for line in reply.stdout.splitlines():
+                key, separator, value = line.strip().partition(' = ')
+                if separator:
+                    values.setdefault(key, value)
+            if (values.get('path') != '/System/Library/LaunchAgents/com.apple.sharingd.plist'
+                    or values.get('program') != '/usr/libexec/sharingd'
+                    or 'DYLD_INSERT_LIBRARIES' in reply.stdout or 'MIRRA_KEYSTORE' in reply.stdout):
+                return False, 'sharingd is not in its original configuration'
+    except BlockingIOError:
+        return False, 'backend controller still owns sharingd'
     return True, None
 
 

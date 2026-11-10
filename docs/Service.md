@@ -110,6 +110,12 @@ ownership before recovering an abandoned job.
 
 A failed observation does not authorize a replacement. Unresolved cleanup keeps
 its recovery record and blocks package replacement until restoration finishes.
+Updating stopped support first runs the existing recovery routines against its
+installed runtime. The updater holds the backend session lock and checks children
+recorded by pending sharing recovery before moving that runtime. It preserves
+the package if a controller or guardian is still alive, the GUI domain cannot be
+queried, or restoration cannot be verified. After recovery succeeds, it archives
+the old package and installs the update using the saved bridge configuration.
 Target Mirroring may still need a new Connect action after backend recovery.
 
 ## Python runtime

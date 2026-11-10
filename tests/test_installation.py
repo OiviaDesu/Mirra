@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from dataclasses import replace
 import hashlib
 import json
@@ -12,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from configuration import load_config
-from installation import NativeService, PACKAGE_ADAPTERS, HOST_TOOLS, PACKAGE_SCHEMA
+from installation import NativeService, PACKAGE_ADAPTERS, HOST_TOOLS, PACKAGE_SCHEMA, SUPPORT_REVISION
 from state import write_state
 from test_interpreter import fixture_runtime
 
@@ -303,6 +304,170 @@ class NativeServiceTests(unittest.TestCase):
                 self.service.update_saved()
         stop.assert_not_called()
         self.assertEqual((self.service.package / 'manifest.json').read_bytes(), before)
+
+    def pending_session(self):
+        """Stopped support with the three recovery records seen after domain loss."""
+        import decoder_route as decoder
+        import launcher
+        from sharingd import ORIGINAL_PLIST, PROGRAM
+        from test_decoder_restore import FakeCtl
+
+        self.prepare()
+        manifest = self.service.package / 'manifest.json'
+        value = json.loads(manifest.read_text())
+        value['support_revision'] = SUPPORT_REVISION - 1
+        write_state(manifest, value)
+        self.install_plist(self.service.definition(self.config))
+        run = self.service.package / 'runtime/native-20261110-000056'
+        backend = run / 'backend-000009'
+        backend.mkdir(parents=True, mode=0o700)
+        birth = [42, os.getuid(), 100, 1]
+        write_state(self.service.state, {'phase': 'stopped', 'directory': str(run), 'supervisor_birth': birth})
+        write_state(run / 'result.json', {'launch_agent_restore_error': 'Domain does not support specified action',
+            'backend_cleanup': {'cleanup_verified': False}, 'decoder_route': {'enabled': True},
+            'decoder_cleanup': {'cleanup_verified': False, 'original_avc_restored': False}})
+        write_state(backend / 'backend-children.json', {'broker': [44, os.getuid(), 100, 2]})
+        cache = self.root / 'Library/Caches/Mirra'
+        cache.mkdir(parents=True, mode=0o700)
+        stage = self.root / 'decoder-stages/mirra-decoder-20261110-000056-fixture'
+        stage.mkdir(parents=True, mode=0o700)
+        write_state(cache / 'launch.json', {'schema_version': 1, 'directory': str(run),
+            'owner_birth': birth, 'helper_socket': None})
+        write_state(cache / 'sharing.json', {'schema_version': 1, 'directory': str(backend),
+            'controller_birth': [45, os.getuid(), 100, 3], 'plist_sha256': 'a' * 64})
+        write_state(cache / 'decoder-route.json', {'stage': str(stage), 'owner_birth': birth,
+            'guardian_birth': [43, os.getuid(), 100, 4], 'deadline_monotonic': None, 'session': 'native support'})
+        job_type = decoder.DecoderJob
+        fake_decoder = FakeCtl(stage)
+        patches = [
+            patch.object(self.service, 'registration', return_value={}),
+            patch('installation.process_birth', return_value=None),
+            patch('ownership.process_birth', return_value=None),
+            patch('sharingd.process_birth', return_value=None),
+            patch('decoder_route.process_birth', return_value=None),
+            patch('supervisor.process_birth', return_value=None),
+            patch('decoder_route.CACHE', cache), patch('decoder_route.JOURNAL', cache / 'decoder-route.json'),
+            patch('decoder_route.STAGES', stage.parent),
+            patch('decoder_route.DecoderJob', side_effect=lambda path: job_type(path, fake_decoder)),
+            patch('launcher.NativeAppObserver'),
+            patch('sharingd.service', return_value={'path': str(ORIGINAL_PLIST), 'program': PROGRAM, 'injected': False}),
+            patch('installation.subprocess.run', return_value=subprocess.CompletedProcess([], 0)),
+        ]
+        contexts = ExitStack()
+        self.addCleanup(contexts.close)
+        for patcher in patches:
+            contexts.enter_context(patcher)
+        self.recovery_command = contexts.enter_context(patch('launcher.NativeLaunchAgent.command',
+            return_value=subprocess.CompletedProcess([], 0,
+                f'path = {launcher.ORIGINAL}\nprogram = {launcher.AGENT}\npid = 99\n', '')))
+        self.updated_start = contexts.enter_context(patch.object(self.service, 'start', return_value={}))
+        return cache, run, stage
+
+    def assert_update_preserved(self, before, journals):
+        self.assertEqual((self.service.package / 'manifest.json').read_bytes(), before)
+        self.assertFalse(list(self.service.base.glob('previous-*')))
+        for path, data in journals.items():
+            self.assertEqual(path.read_bytes(), data)
+        self.updated_start.assert_not_called()
+
+    def test_update_recovers_stopped_session_before_archiving_its_runtime(self):
+        cache, run, stage = self.pending_session()
+        config = load_config(self.service.package / 'config.json')
+        credentials = {name: getattr(config, name).read_bytes() for name in
+                       ('identity_file', 'user_file', 'known_hosts_file', 'certificate_file')}
+        self.service.update_saved()
+        self.assertFalse(any((cache / name).exists() for name in ('launch.json', 'sharing.json', 'decoder-route.json')))
+        self.assertTrue(json.loads((stage / 'restored.json').read_text())['original_avc_restored'])
+        self.assertFalse(self.service.needs_update())
+        self.updated_start.assert_called_once()
+        previous, = self.service.base.glob('previous-*')
+        self.assertTrue((previous / 'runtime' / run.name / 'result.json').is_file())
+        self.assertTrue((previous / 'runtime' / run.name / 'backend-000009/sharingd-last-restore.json').is_file())
+        current = load_config(self.service.package / 'config.json')
+        self.assertEqual(current, config)
+        for name, data in credentials.items():
+            self.assertEqual(getattr(current, name).read_bytes(), data)
+
+    def test_unavailable_gui_domain_keeps_package_and_all_recovery_journals(self):
+        cache, _, _ = self.pending_session()
+        before = (self.service.package / 'manifest.json').read_bytes()
+        journals = {path: path.read_bytes() for path in cache.glob('*.json')}
+        self.recovery_command.return_value = subprocess.CompletedProcess([], 125, '',
+            'Could not print domain: 125: Domain does not support specified action')
+        with self.assertRaisesRegex(RuntimeError, 'Cannot inspect CoreServicesUIAgent.*125'):
+            self.service.update_saved()
+        self.assert_update_preserved(before, journals)
+
+    def test_live_backend_child_prevents_recovery_and_package_replacement(self):
+        cache, _, _ = self.pending_session()
+        before = (self.service.package / 'manifest.json').read_bytes()
+        journals = {path: path.read_bytes() for path in cache.glob('*.json')}
+        with patch('supervisor.process_birth', return_value=(44, os.getuid(), 100, 2)):
+            with self.assertRaisesRegex(RuntimeError, 'backend children are still running'):
+                self.service.update_saved()
+        self.recovery_command.assert_not_called()
+        self.assert_update_preserved(before, journals)
+
+    def test_backend_session_lock_prevents_package_replacement(self):
+        from supervisor import backend_lease
+        cache, _, _ = self.pending_session()
+        before = (self.service.package / 'manifest.json').read_bytes()
+        journals = {path: path.read_bytes() for path in cache.glob('*.json')}
+        with backend_lease(), self.assertRaises(BlockingIOError):
+            self.service.update_saved()
+        self.recovery_command.assert_not_called()
+        self.assert_update_preserved(before, journals)
+
+    def test_foreign_launch_runtime_is_preserved_during_update(self):
+        cache, _, _ = self.pending_session()
+        journal = cache / 'launch.json'
+        record = json.loads(journal.read_text())
+        record['directory'] = str(self.root / 'another-installation/runtime/native-test')
+        write_state(journal, record)
+        before = (self.service.package / 'manifest.json').read_bytes()
+        journals = {path: path.read_bytes() for path in cache.glob('*.json')}
+        with self.assertRaisesRegex(RuntimeError, 'outside this runtime directory'):
+            self.service.update_saved()
+        self.recovery_command.assert_not_called()
+        self.assert_update_preserved(before, journals)
+
+    def test_foreign_sharing_runtime_is_preserved_before_any_recovery(self):
+        cache, _, _ = self.pending_session()
+        directory = self.root / 'another-installation/runtime/native-test/backend-000001'
+        directory.mkdir(parents=True, mode=0o700)
+        journal = cache / 'sharing.json'
+        record = json.loads(journal.read_text())
+        record['directory'] = str(directory)
+        write_state(journal, record)
+        before = (self.service.package / 'manifest.json').read_bytes()
+        journals = {path: path.read_bytes() for path in cache.glob('*.json')}
+        with self.assertRaisesRegex(RuntimeError, 'belongs to another installation'):
+            self.service.update_saved()
+        self.recovery_command.assert_not_called()
+        self.assert_update_preserved(before, journals)
+
+    def test_live_decoder_guardian_preserves_unfinished_recovery(self):
+        cache, _, _ = self.pending_session()
+        before = (self.service.package / 'manifest.json').read_bytes()
+        journals = {cache / name: (cache / name).read_bytes() for name in ('sharing.json', 'decoder-route.json')}
+        with patch('decoder_route.process_birth', return_value=(43, os.getuid(), 100, 4)):
+            with self.assertRaisesRegex(RuntimeError, 'still restoring AVConference'):
+                self.service.update_saved()
+        self.assertFalse((cache / 'launch.json').exists())
+        self.assert_update_preserved(before, journals)
+
+    def test_update_can_retry_after_partial_recovery_and_guardian_exit(self):
+        cache, _, _ = self.pending_session()
+        with patch('decoder_route.process_birth', return_value=(43, os.getuid(), 100, 4)):
+            with self.assertRaisesRegex(RuntimeError, 'still restoring AVConference'):
+                self.service.update_saved()
+        self.assertFalse((cache / 'launch.json').exists())
+        self.assertTrue((cache / 'decoder-route.json').exists())
+        self.updated_start.assert_not_called()
+        self.service.update_saved()
+        self.assertFalse(any((cache / name).exists() for name in ('launch.json', 'sharing.json', 'decoder-route.json')))
+        self.assertFalse(self.service.needs_update())
+        self.updated_start.assert_called_once()
 
     def test_build341_upgrade_keeps_saved_bridge_and_launch_definition(self):
         self.prepare()

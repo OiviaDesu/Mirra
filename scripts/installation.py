@@ -19,6 +19,7 @@ from processes import process_birth
 from state import write_state
 from compatibility import require_media_profile
 from interpreter import copy_runtime, ENTRYPOINT
+from supervisor import backend_lease, backend_children_stopped
 import activity
 
 LABEL = 'local.mirra.agent'
@@ -28,7 +29,7 @@ HOST_TOOLS = ['inspector']
 DECODER_ADAPTERS = ['decoder-route.dylib']
 PACKAGE_ADAPTERS = ADAPTERS + DECODER_ADAPTERS
 PACKAGE_SCHEMA = 5
-SUPPORT_REVISION = 22
+SUPPORT_REVISION = 23
 
 
 class NativeService:
@@ -123,8 +124,40 @@ class NativeService:
             with activity.operation('Service', 'stop support for update'):
                 self.stop()
             with activity.operation('Service', 'update support using saved bridge'):
-                self.prepare(replace_package=True)
+                with backend_lease():
+                    self.recover_pending()
+                    self.prepare(replace_package=True)
         return self.install()
+
+    def recover_pending(self):
+        """Restore a stopped installation before moving its journaled runtime."""
+        cache = Path.home() / 'Library/Caches/Mirra'
+        if not any((cache / name).exists() for name in ('launch.json', 'sharing.json', 'decoder-route.json')):
+            return
+        current = self.status()
+        if current.get('registered') or current.get('supervisor_alive'):
+            raise RuntimeError('Stop native support before recovering its previous session')
+        from launcher import NativeLaunchAgent
+        from sharingd import SharingdAgent
+        import decoder_route
+
+        runtime = self.package / 'runtime'
+        sharing = SharingdAgent().read_journal()
+        if sharing is not None:
+            previous = Path(sharing['directory'])
+            if (previous.parent.parent != runtime or not previous.parent.name.startswith('native-')
+                    or not previous.name.startswith('backend-')):
+                raise RuntimeError('Pending sharingd recovery belongs to another installation; it was preserved')
+            if not backend_children_stopped(previous):
+                raise RuntimeError('Previous backend children are still running; package update was deferred')
+        with activity.operation('Service', 'recover previous app launch support'):
+            NativeLaunchAgent.recover_abandoned(runtime_root=runtime)
+        if decoder_route.JOURNAL.exists():
+            with activity.operation('Service', 'recover previous decoder'):
+                descriptor = decoder_route.acquire()
+                os.close(descriptor)
+        with activity.operation('Service', 'recover previous sharing support'):
+            SharingdAgent.recover_abandoned()
 
     def validate_source(self):
         for name in ('native.py', 'decoder.py', 'decoder_route.py', 'startup.py'):

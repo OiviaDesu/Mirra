@@ -17,7 +17,7 @@ AGENT = '/System/Library/CoreServices/CoreServicesUIAgent.app/Contents/MacOS/Cor
 
 
 class NativeLaunchAgent:
-    def __init__(self, directory, environment, stop=None):
+    def __init__(self, directory, environment, stop=None, *, runtime_root=None):
         self.directory = Path(directory)
         self.environment = dict(environment)
         self.stop = stop if stop is not None else threading.Event()
@@ -28,14 +28,14 @@ class NativeLaunchAgent:
         self.log = self.directory / 'native-launch-agent.stderr.log'
         self.changed = False
         self.lock = None
-        self.journal=LaunchOwnerJournal(ROOT/'runtime')
+        self.journal=LaunchOwnerJournal(ROOT/'runtime' if runtime_root is None else runtime_root)
         self.journal_owned=False
 
     def _recover_under_lock(self):
         previous=self.journal.abandoned()
         if previous is None:return None
         directory=Path(previous['directory'])
-        old=NativeLaunchAgent(directory,{})
+        old=NativeLaunchAgent(directory,{},runtime_root=self.journal.runtime_root)
         old.changed=True
         # close() accepts only the journal's exact plist or Apple's original job.
         restored=old.close()
@@ -47,12 +47,13 @@ class NativeLaunchAgent:
         return {'directory':str(directory),'original_agent_restored':restored is not None}
 
     @classmethod
-    def recover_abandoned(cls):
+    def recover_abandoned(cls, *, runtime_root=None):
+        root=ROOT/'runtime' if runtime_root is None else Path(runtime_root)
         directory=Path.home()/'Library/Caches/Mirra'
         directory.mkdir(mode=0o700,parents=True,exist_ok=True)
         with (directory/'native-launch-agent.lock').open('a') as lock:
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-            return cls(ROOT/'runtime'/'native-recovery',{})._recover_under_lock()
+            return cls(root/'native-recovery',{},runtime_root=root)._recover_under_lock()
 
     def command(self, *args):
         return subprocess.run(['launchctl', *args], capture_output=True, text=True, timeout=12)
