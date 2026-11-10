@@ -27,6 +27,14 @@ JOURNAL = CACHE / 'decoder-route.json'
 STAGE_PATTERN = re.compile(r'mirra-decoder-[0-9]{8}-[0-9]{6}-[a-z0-9_]+')
 
 
+class DecoderUnloadError(RuntimeError):
+    def __init__(self, reply):
+        self.returncode = reply.returncode
+        self.stderr = (reply.stderr or '').strip()[:2048]
+        super().__init__('AVConference could not be unloaded for this session '
+                         f'(launchctl exit {self.returncode}): {self.stderr}')
+
+
 def private(path, kind=stat.S_ISREG):
     info = Path(path).lstat()
     if not kind(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
@@ -178,7 +186,7 @@ class DecoderJob:
                     'original_was_running': bool(before.get('pid') and before.get('state') == 'running')})
         reply = self.command('bootout', self.target)
         if reply.returncode:
-            raise RuntimeError('AVConference could not be unloaded for this session')
+            raise DecoderUnloadError(reply)
         if self.wait_removed(ORIGINAL):
             raise RuntimeError('AVConference changed during startup; no replacement attempted')
         reply = self.command('bootstrap', self.domain, str(self.plist))

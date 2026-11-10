@@ -87,18 +87,20 @@ class RouteLifecycleTests(unittest.TestCase):
         self.assertTrue(result['cleanup_verified'])
         self.assertIsNone(result['original_avc_restored'])
 
-    def simulated_controller(self):
-        instance = decoder.DecoderRoute(self.root, self.directory, host=DESKTOP, stop=threading.Event())
+    def simulated_controller(self, *, mode='auto', failure=None):
+        instance = decoder.DecoderRoute(self.root, self.directory, host=DESKTOP,
+                                       mode=mode, stop=threading.Event())
         fake_holder = []
         class Job(route.DecoderJob):
             def __init__(self, stage):
                 fake = FakeCtl(stage)
+                fake.fail = failure
                 old_owned = fake.owned
                 fake.owned = lambda: dict(old_owned(), pid=os.getpid())
                 super().__init__(stage, fake)
                 fake_holder.append(fake)
             def prepare(self, library, *, policy='all_h264'):
-                if policy != 'fls_p3':
+                if policy != ('fls_p3' if mode == 'auto' else 'all_h264'):
                     raise AssertionError('Automatic policy was not passed to AVConference')
                 for name in ('stdout.log', 'stderr.log'):
                     (self.stage / name).touch(mode=0o600)
@@ -123,6 +125,79 @@ class RouteLifecycleTests(unittest.TestCase):
         instance.spawn_guardian = spawn
         p = patch.object(route, 'DecoderJob', Job); p.start(); self.addCleanup(p.stop)
         return instance, fake_holder
+
+    def test_auto_bootout_failure_continues_normal_after_verified_restore(self):
+        instance, calls = self.simulated_controller(failure='bootout')
+        state = instance.start()
+        self.assertEqual(state['requested'], 'auto')
+        self.assertEqual(state['mode'], 'normal')
+        self.assertTrue(state['ready'])
+        self.assertFalse(state['enabled'])
+        self.assertTrue(state['decoder_fallback']['original_avc_restored'])
+        self.assertEqual(state['decoder_fallback']['launchctl_exit'], 5)
+        saved = decoder.read_json(self.directory / 'decoder-route.json')
+        self.assertEqual(saved['decoder_fallback'], state['decoder_fallback'])
+        self.assertIsNone(instance.lock)
+        self.assertFalse(route.JOURNAL.exists())
+        self.assertEqual(sum(call[0] == 'bootout' for call in calls[0].calls), 1)
+        self.assertFalse(any(call[0] == 'bootstrap' for call in calls[0].calls))
+        before = len(calls[0].calls)
+        instance.poll()
+        self.assertTrue(instance.close()['cleanup_verified'])
+        self.assertEqual(len(calls[0].calls), before)
+
+    def test_auto_nonzero_bootout_that_removed_job_restores_before_fallback(self):
+        instance, calls = self.simulated_controller(failure='bootout_after_removal')
+        state = instance.start()
+        self.assertEqual(state['mode'], 'normal')
+        self.assertTrue(state['decoder_fallback']['original_avc_restored'])
+        bootstraps = [call for call in calls[0].calls if call[0] == 'bootstrap']
+        self.assertEqual(len(bootstraps), 1)
+        self.assertEqual(bootstraps[0][-1], str(route.ORIGINAL))
+        instance.close()
+
+    def test_auto_fallback_refuses_foreign_service_after_rejected_bootout(self):
+        instance, calls = self.simulated_controller(failure='bootout_foreign')
+        with self.assertRaisesRegex(RuntimeError, 'requires verified'):
+            instance.start()
+        self.assertFalse(instance.ready)
+        self.assertTrue(route.JOURNAL.exists())
+        self.assertEqual(calls[0].current['path'], '/foreign/job.plist')
+        self.assertFalse(any(call[0] == 'bootstrap' for call in calls[0].calls))
+
+    def test_explicit_hook_request_never_falls_back(self):
+        instance, _ = self.simulated_controller(mode='no_fls', failure='bootout')
+        try:
+            with self.assertRaises(route.DecoderUnloadError):
+                instance.start()
+            self.assertTrue(instance.decision['enabled'])
+            self.assertFalse(instance.ready)
+            self.assertNotIn('decoder_fallback', instance.metadata)
+        finally:
+            instance.close()
+
+    def test_other_startup_errors_are_not_hidden_by_fallback(self):
+        instance, _ = self.simulated_controller(failure='bootstrap')
+        try:
+            with self.assertRaisesRegex(RuntimeError, 'registration failed'):
+                instance.start()
+            self.assertNotIn('decoder_fallback', instance.metadata)
+            self.assertFalse(instance.ready)
+        finally:
+            instance.close()
+
+    def test_stop_during_restoration_prevents_fallback_readiness(self):
+        instance, _ = self.simulated_controller(failure='bootout')
+        close = instance.close
+        def stop_and_restore():
+            result = close()
+            instance.stop.set()
+            return result
+        with patch.object(instance, 'close', side_effect=stop_and_restore):
+            with self.assertRaisesRegex(RuntimeError, 'requires verified'):
+                instance.start()
+        self.assertFalse(instance.ready)
+        self.assertFalse(route.JOURNAL.exists())
 
     def test_production_session_has_no_test_deadline_and_restores_on_stop(self):
         instance, calls = self.simulated_controller()

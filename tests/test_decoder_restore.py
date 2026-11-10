@@ -62,8 +62,12 @@ class FakeCtl:
         if args[0] == 'bootout':
             if not (self.stage / 'armed.json').exists() and self.current and self.current.get('path') == str(route.ORIGINAL):
                 raise AssertionError('Job changed before restoration was armed')
-            if self.fail == 'bootout':
-                return subprocess.CompletedProcess(args, 1, '', 'Failed')
+            if self.fail in ('bootout', 'bootout_after_removal', 'bootout_foreign'):
+                if self.fail == 'bootout_after_removal':
+                    self.current = None
+                elif self.fail == 'bootout_foreign':
+                    self.current = {'path': '/foreign/job.plist', 'program': '/foreign/program'}
+                return subprocess.CompletedProcess(args, 5, '', 'Boot-out failed: fixture rejection')
             if self.fail == 'delayed':
                 self.removal_polls = 3
             else:
@@ -129,8 +133,10 @@ class RestoreTests(unittest.TestCase):
 
     def test_bootout_failure_preserves_original(self):
         self.fake.fail = 'bootout'
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(route.DecoderUnloadError) as caught:
             self.job.start()
+        self.assertEqual(caught.exception.returncode, 5)
+        self.assertEqual(caught.exception.stderr, 'Boot-out failed: fixture rejection')
         self.assertTrue(self.job.original(self.job.restore()))
         self.assertFalse(any(call[0] == 'bootstrap' for call in self.fake.calls))
 

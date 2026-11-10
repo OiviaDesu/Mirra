@@ -136,10 +136,17 @@ class DecoderRoute:
             raise RuntimeError('Restoration guardian identity could not be verified')
         route.write_json(route.JOURNAL, owner)
         self.record('Restoration guardian started', guardian_birth=owner['guardian_birth'])
-        with route.transaction(self.stage):
-            if self.interrupted() or self.guardian.poll() is not None or (self.stage / 'restored.json').exists():
-                raise RuntimeError('Native support stopped before decoder startup')
-            self.job.start()
+        try:
+            with route.transaction(self.stage):
+                if self.interrupted() or self.guardian.poll() is not None or (self.stage / 'restored.json').exists():
+                    raise RuntimeError('Native support stopped before decoder startup')
+                self.job.start()
+        except route.DecoderUnloadError as error:
+            self.record('AVConference unload failed', 'error',
+                        launchctl_exit=error.returncode, launchctl_stderr=error.stderr)
+            if self.decision['requested'] != 'auto':
+                raise
+            return self.use_normal_after_restore(error)
         self.record('Started AVConference with the decoder route')
         deadline = time.monotonic() + 15
         while True:
@@ -163,6 +170,25 @@ class DecoderRoute:
         self.ready = True
         self.observation = 'ready'
         self.record('Decoder route is ready', pid=self.pid, **self.metadata)
+        return self.save()
+
+    def use_normal_after_restore(self, error):
+        # A nonzero bootout status does not establish whether it changed the
+        # job. Complete and verify restoration before accepting a normal route.
+        restored = self.close()
+        if (not restored.get('cleanup_verified') or not restored.get('original_avc_restored')
+                or route.JOURNAL.exists() or self.interrupted()):
+            raise RuntimeError('Automatic decoder fallback requires verified AVConference restoration') from error
+        fallback = {'reason': 'avconference_unload_failed', 'launchctl_exit': error.returncode,
+                    'original_avc_restored': True, 'stage': str(self.stage)}
+        self.metadata['decoder_fallback'] = fallback
+        self.stage = self.job = self.guardian = None
+        self.decision.update(mode='normal', enabled=False,
+                             reason='normal decoder after automatic compatibility setup was unavailable')
+        self.ready = True
+        self.observation = 'ready'
+        self.record('Continuing with the normal decoder after verified restoration', 'warning',
+                    compatibility_hook_active=False, **fallback)
         return self.save()
 
     def spawn_guardian(self):

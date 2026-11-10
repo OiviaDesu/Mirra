@@ -14,6 +14,14 @@ are recorded in the logs. Uninspected architectures and builds use the normal ro
 This includes macOS 15: accepting a host's media interfaces does not automatically
 enable a decoder hook that has not been inspected on that OS.
 
+If automatic setup cannot unload AVConference, Mirra restores and verifies
+Apple's original service before continuing with the normal decoder. The logs
+record the launchctl exit status, rejection text, and fallback. This permits
+the rest of native support to start; it does not establish successful video
+decoding. A Display P3/FLS problem can still require the compatibility hook.
+Unverified restoration still stops startup, and an explicit `no_fls` request
+does not fall back silently.
+
 The advanced `host.decoder_route` setting accepts:
 
 | Value | Behavior |
