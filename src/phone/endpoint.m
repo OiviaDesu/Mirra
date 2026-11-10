@@ -9,6 +9,19 @@
 #include <sys/stat.h>
 #include <sys/sysctl.h>
 #include <CommonCrypto/CommonDigest.h>
+#if TARGET_OS_IPHONE && defined(__arm64__) && !defined(__arm64e__)
+#define KEYSTORE_MAPPED_TARGET 1
+#else
+#define KEYSTORE_MAPPED_TARGET 0
+#endif
+#if KEYSTORE_MAPPED_TARGET || defined(MIRRA_SYMBOL_FIXTURES)
+#include <mach-o/dyld.h>
+#include <mach-o/loader.h>
+#include <mach/vm_prot.h>
+#include <stdbool.h>
+#include "keystore-symbols.h"
+
+#endif
 
 // Experimental AKS endpoint over stdin/stdout (carried by authenticated SSH).
 // All identities live in newly allocated unsaved keybags. Only session IDs
@@ -29,6 +42,31 @@ typedef int (*RemoteOutput)(int, void **, size_t *);
 typedef int (*ValidateKey)(int, int, const void *, size_t);
 typedef int (*PeerState)(int, const void *, size_t, void *);
 typedef int (*PeerDrop)(int, const void *, size_t);
+
+// Shared by the protocol endpoint and its device check.
+typedef struct {
+    CreateBag create_bag;
+    UnloadBag unload_bag;
+    CreateKey create_key;
+    CreateKeyParams create_key_params;
+    SignKey sign_key;
+    ParamsCreate params_create;
+    ParamsData params_data;
+    ParamsNumber params_number;
+    ParamsDER params_der;
+    RemoteSession remote_session;
+    RemoteStep remote_step;
+    ResetSession reset_session;
+    RemoteOutput session_token;
+    RemoteOutput peer_confirm;
+    RemoteStep peer_setup;
+    ValidateKey validate_key;
+    PeerState peer_state;
+    PeerDrop peer_drop;
+} KeyStore;
+
+typedef void *(*SymbolResolver)(void *, const char *);
+typedef void *(*SymbolFallback)(const char *);
 
 static void reply(NSDictionary *value) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:NULL];
@@ -83,14 +121,6 @@ static NSString *system_value(const char *name) {
     return sysctlbyname(name, value, &size, NULL, 0) == 0 ? [NSString stringWithUTF8String:value] : @"unavailable";
 }
 
-static void *required_symbol(void *library, const char *name,
-                             NSMutableArray<NSString *> *missing,
-                             void *(*resolve)(void *, const char *)) {
-    void *symbol = library ? resolve(library, name) : NULL;
-    if (!symbol) [missing addObject:@(name)];
-    return symbol;
-}
-
 static NSString *process_architecture(void) {
 #if defined(__arm64e__)
     return @"arm64e";
@@ -101,6 +131,168 @@ static NSString *process_architecture(void) {
 #else
     return @"unknown";
 #endif
+}
+
+// Private symbol fallback contributed by @OiviaDesu in PR #4 (a193c167).
+#if KEYSTORE_MAPPED_TARGET || defined(MIRRA_SYMBOL_FIXTURES)
+
+static bool symbol_map_supported(const char *build, const char *architecture) {
+    return build && architecture && !strcmp(build, keystore_build) && !strcmp(architecture, "arm64");
+}
+
+static const MappedSymbol *find_symbol(const char *name) {
+    if (!name) return NULL;
+    for (size_t i = 0; i < sizeof(keystore_symbols) / sizeof(*keystore_symbols); i++)
+        if (!strcmp(name, keystore_symbols[i].name)) return &keystore_symbols[i];
+    return NULL;
+}
+
+static bool slid_address(uint64_t value, intptr_t slide, uintptr_t *result) {
+    if (slide >= 0) {
+        if (value > UINTPTR_MAX - (uintptr_t)slide) return false;
+        *result = (uintptr_t)value + (uintptr_t)slide;
+    } else {
+        uintptr_t amount = (uintptr_t)(-(slide + 1)) + 1;
+        if (value < amount) return false;
+        *result = (uintptr_t)value - amount;
+    }
+    return true;
+}
+
+// Validate metadata separately from dyld lookup so malformed and mismatched
+// images can be checked on the host without calling any private function.
+static void *image_symbol(const void *bytes, size_t length, uintptr_t base,
+                          intptr_t slide, const MappedSymbol *symbol) {
+    if (!bytes || !symbol || length < sizeof(struct mach_header_64) ||
+        symbol->image >= sizeof(keystore_images) / sizeof(*keystore_images) ||
+        symbol->offset > UINTPTR_MAX - base) return NULL;
+    struct mach_header_64 header;
+    memcpy(&header, bytes, sizeof(header));
+    if (header.magic != MH_MAGIC_64 || header.cputype != CPU_TYPE_ARM64 ||
+        (header.cpusubtype & ~CPU_SUBTYPE_MASK) != CPU_SUBTYPE_ARM64_ALL ||
+        header.sizeofcmds > length - sizeof(header)) return NULL;
+    uintptr_t address = base + symbol->offset;
+    if (address & 3) return NULL;
+    const unsigned char *cursor = (const unsigned char *)bytes + sizeof(header);
+    size_t remaining = header.sizeofcmds;
+    bool uuid_ok = false, text_ok = false;
+    unsigned uuid_count = 0;
+    for (uint32_t i = 0; i < header.ncmds; i++) {
+        struct load_command command;
+        if (remaining < sizeof(command)) return NULL;
+        memcpy(&command, cursor, sizeof(command));
+        if (command.cmdsize < sizeof(command) || command.cmdsize > remaining ||
+            command.cmdsize % 8) return NULL;
+        if (command.cmd == LC_UUID) {
+            struct uuid_command uuid;
+            if (command.cmdsize != sizeof(uuid) || ++uuid_count != 1) return NULL;
+            memcpy(&uuid, cursor, sizeof(uuid));
+            uuid_ok = !memcmp(uuid.uuid, keystore_images[symbol->image].uuid, sizeof(uuid.uuid));
+        } else if (command.cmd == LC_SEGMENT_64) {
+            struct segment_command_64 segment;
+            if (command.cmdsize < sizeof(segment)) return NULL;
+            memcpy(&segment, cursor, sizeof(segment));
+            if (segment.nsects > (command.cmdsize - sizeof(segment)) / sizeof(struct section_64)) return NULL;
+            if (!strncmp(segment.segname, "__TEXT", sizeof(segment.segname)) &&
+                (segment.initprot & VM_PROT_EXECUTE)) {
+                uintptr_t start;
+                if (!slid_address(segment.vmaddr, slide, &start) || address < start ||
+                    segment.vmsize < 4 || address - start > segment.vmsize - 4) return NULL;
+                for (uint32_t s = 0; s < segment.nsects; s++) {
+                    struct section_64 section;
+                    memcpy(&section, cursor + sizeof(segment) + s * sizeof(section), sizeof(section));
+                    if (!strncmp(section.segname, "__TEXT", sizeof(section.segname)) &&
+                        !strncmp(section.sectname, "__text", sizeof(section.sectname)) &&
+                        (section.flags & S_ATTR_PURE_INSTRUCTIONS) &&
+                        slid_address(section.addr, slide, &start) && address >= start &&
+                        section.size >= 4 && address - start <= section.size - 4) text_ok = true;
+                }
+            }
+        }
+        cursor += command.cmdsize;
+        remaining -= command.cmdsize;
+    }
+    return remaining == 0 && uuid_ok && text_ok ? (void *)address : NULL;
+}
+#endif
+
+static void *mapped_keystore_symbol(const char *name) {
+#if KEYSTORE_MAPPED_TARGET
+    // Reuse the endpoint's platform helpers and inspect the build once, only
+    // after a normal lookup fails. Unsupported hosts never load mapped images.
+    static bool checked, supported;
+    if (!checked) {
+        supported = symbol_map_supported(system_value("kern.osversion").UTF8String,
+                                         process_architecture().UTF8String);
+        checked = true;
+    }
+    if (!supported) return NULL;
+    const MappedSymbol *symbol = find_symbol(name);
+    if (!symbol) return NULL;
+    const char *path = keystore_images[symbol->image].path;
+    // Called from the endpoint's serial request loop; retain handles for the
+    // process lifetime so a returned function address cannot become unmapped.
+    static void *handles[sizeof(keystore_images) / sizeof(*keystore_images)];
+    if (!handles[symbol->image]) handles[symbol->image] = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+    if (!handles[symbol->image]) return NULL;
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *loaded = _dyld_get_image_name(i);
+        if (!loaded || strcmp(loaded, path)) continue;
+        const struct mach_header_64 *header = (const void *)_dyld_get_image_header(i);
+        // dyld owns the mapped header and load commands. Bound their extent
+        // before passing it to the same validator used by the fixture tests.
+        if (!header || header->sizeofcmds > 1024 * 1024) return NULL;
+        return image_symbol(header, sizeof(*header) + header->sizeofcmds,
+                            (uintptr_t)header, _dyld_get_image_vmaddr_slide(i), symbol);
+    }
+#else
+    (void)name;
+#endif
+    return NULL;
+}
+
+static void *required_symbol(void *library, const char *name,
+                             NSMutableArray<NSString *> *missing,
+                             SymbolResolver resolve, SymbolFallback fallback) {
+    void *symbol = library ? resolve(library, name) : NULL;
+    if (!symbol && fallback) symbol = fallback(name);
+    if (!symbol) [missing addObject:@(name)];
+    return symbol;
+}
+
+static void *keystore_library(void) {
+#if TARGET_OS_IPHONE
+    const char *path = "/System/Library/PrivateFrameworks/AppleKeyStore.framework/AppleKeyStore";
+#else
+    const char *path = "/System/Library/PrivateFrameworks/AppleKeyStore.framework/Versions/A/AppleKeyStore";
+#endif
+    return dlopen(path, RTLD_LAZY | RTLD_LOCAL);
+}
+
+static NSMutableArray<NSString *> *load_keystore(KeyStore *keys, void *library,
+                                                SymbolResolver resolve, SymbolFallback fallback) {
+    NSMutableArray<NSString *> *missing = [NSMutableArray array];
+#define LOAD(TYPE, NAME, SYMBOL) keys->NAME = (TYPE)required_symbol(library, SYMBOL, missing, resolve, fallback)
+    LOAD(CreateBag, create_bag, "aks_create_bag");
+    LOAD(UnloadBag, unload_bag, "aks_unload_bag");
+    LOAD(CreateKey, create_key, "aks_create_signing_key");
+    LOAD(CreateKeyParams, create_key_params, "aks_create_signing_key_with_params");
+    LOAD(SignKey, sign_key, "aks_sign_signing_key");
+    LOAD(ParamsCreate, params_create, "aks_params_create");
+    LOAD(ParamsData, params_data, "aks_params_set_data");
+    LOAD(ParamsNumber, params_number, "aks_params_set_number");
+    LOAD(ParamsDER, params_der, "aks_params_get_der");
+    LOAD(RemoteSession, remote_session, "aks_remote_session");
+    LOAD(RemoteStep, remote_step, "aks_remote_session_step");
+    LOAD(ResetSession, reset_session, "aks_remote_session_reset");
+    LOAD(RemoteOutput, session_token, "aks_remote_session_token");
+    LOAD(RemoteOutput, peer_confirm, "aks_remote_peer_confirm");
+    LOAD(RemoteStep, peer_setup, "aks_remote_peer_setup");
+    LOAD(ValidateKey, validate_key, "aks_validate_local_key");
+    LOAD(PeerState, peer_state, "aks_remote_peer_get_state");
+    LOAD(PeerDrop, peer_drop, "aks_remote_peer_drop");
+#undef LOAD
+    return missing;
 }
 
 static int export_certificate(const char *output, BOOL issue) {
@@ -175,33 +367,9 @@ int main(int argc, const char *argv[]) {
             return export_certificate(argv[2], !strcmp(argv[1], "--issue-certificate"));
         BOOL capabilities = argc == 2 && !strcmp(argv[1], "--capabilities");
         if (argc != 2) { reply(@{@"ready": @NO, @"error": @"certificate_path_or_capabilities_required"}); return 1; }
-#if TARGET_OS_IPHONE
-        const char *path = "/System/Library/PrivateFrameworks/AppleKeyStore.framework/AppleKeyStore";
-#else
-        const char *path = "/System/Library/PrivateFrameworks/AppleKeyStore.framework/Versions/A/AppleKeyStore";
-#endif
-        void *library = dlopen(path, RTLD_LAZY | RTLD_LOCAL);
-        NSMutableArray<NSString *> *missing = [NSMutableArray array];
-#define LOAD(TYPE, NAME, SYMBOL) TYPE NAME = (TYPE)required_symbol(library, SYMBOL, missing, dlsym)
-        LOAD(CreateBag, create_bag, "aks_create_bag");
-        LOAD(UnloadBag, unload_bag, "aks_unload_bag");
-        LOAD(CreateKey, create_key, "aks_create_signing_key");
-        LOAD(CreateKeyParams, create_key_params, "aks_create_signing_key_with_params");
-        LOAD(SignKey, sign_key, "aks_sign_signing_key");
-        LOAD(ParamsCreate, params_create, "aks_params_create");
-        LOAD(ParamsData, params_data, "aks_params_set_data");
-        LOAD(ParamsNumber, params_number, "aks_params_set_number");
-        LOAD(ParamsDER, params_der, "aks_params_get_der");
-        LOAD(RemoteSession, remote_session, "aks_remote_session");
-        LOAD(RemoteStep, remote_step, "aks_remote_session_step");
-        LOAD(ResetSession, reset_session, "aks_remote_session_reset");
-        LOAD(RemoteOutput, session_token, "aks_remote_session_token");
-        LOAD(RemoteOutput, peer_confirm, "aks_remote_peer_confirm");
-        LOAD(RemoteStep, peer_setup, "aks_remote_peer_setup");
-        LOAD(ValidateKey, validate_key, "aks_validate_local_key");
-        LOAD(PeerState, peer_state, "aks_remote_peer_get_state");
-        LOAD(PeerDrop, peer_drop, "aks_remote_peer_drop");
-#undef LOAD
+        void *library = keystore_library();
+        KeyStore keys = {0};
+        NSMutableArray<NSString *> *missing = load_keystore(&keys, library, dlsym, mapped_keystore_symbol);
         BOOL available = missing.count == 0;
         NSMutableDictionary *capability_report = [@{@"protocol_version": @1,
             @"required_symbols_available": @(available), @"missing_symbols": missing,
@@ -262,22 +430,22 @@ int main(int argc, const char *argv[]) {
                     uint8_t passcode[32];
                     if (SecRandomCopyBytes(kSecRandomDefault, sizeof(passcode), passcode) != 0) return 1;
                     int bag = -1;
-                    int status = create_bag(passcode, sizeof(passcode), 0, &bag);
+                    int status = keys.create_bag(passcode, sizeof(passcode), 0, &bag);
                     memset(passcode, 0, sizeof(passcode));
                     void *blob = NULL;
                     size_t size = 0;
                     if (status == 0 && bag >= 0) {
                         if (!attested) {
-                            status = create_key(bag, key_class, &blob, &size);
+                            status = keys.create_key(bag, key_class, &blob, &size);
                         } else {
-                            void *params = params_create(NULL, 0);
+                            void *params = keys.params_create(NULL, 0);
                             int64_t flag = 4;
                             const void *der = NULL;
                             size_t der_size = 0;
-                            status = params_data(params, 21, dcrt.bytes, dcrt.length);
-                            if (status == 0) status = params_number(params, 20, &flag);
-                            if (status == 0) status = params_der(params, &der, &der_size);
-                            if (status == 0) status = create_key_params(bag, key_class, der, der_size, &blob, &size);
+                            status = keys.params_data(params, 21, dcrt.bytes, dcrt.length);
+                            if (status == 0) status = keys.params_number(params, 20, &flag);
+                            if (status == 0) status = keys.params_der(params, &der, &der_size);
+                            if (status == 0) status = keys.create_key_params(bag, key_class, der, der_size, &blob, &size);
                         }
                     }
                     NSMutableDictionary *response = result(status);
@@ -290,7 +458,7 @@ int main(int argc, const char *argv[]) {
                         response[@"bytes"] = @(size);
                         response[@"key_class"] = @(key_class);
                     } else if (bag >= 0) {
-                        unload_bag(bag);
+                        keys.unload_bag(bag);
                     }
                     clear_blob(blob, size);
                     reply(response);
@@ -303,7 +471,7 @@ int main(int argc, const char *argv[]) {
                         continue;
                     }
                     NSData *key = identity[@"ltk"];
-                    reply(result(validate_key([identity[@"bag"] intValue], [identity[@"key_class"] intValue], key.bytes, key.length)));
+                    reply(result(keys.validate_key([identity[@"bag"] intValue], [identity[@"key_class"] intValue], key.bytes, key.length)));
                     continue;
                 }
                 if ([operation isEqual:@"get_state"] || [operation isEqual:@"drop"]) {
@@ -315,12 +483,12 @@ int main(int argc, const char *argv[]) {
                         continue;
                     }
                     if ([operation isEqual:@"drop"]) {
-                        int status = peer_drop([identity[@"bag"] intValue], key.bytes, key.length);
+                        int status = keys.peer_drop([identity[@"bag"] intValue], key.bytes, key.length);
                         if (status == 0) [remote_owners removeObjectForKey:encoded];
                         reply(result(status));
                     } else {
                         uint8_t state[104] = {0};
-                        int status = peer_state([identity[@"bag"] intValue], key.bytes, key.length, state);
+                        int status = keys.peer_state([identity[@"bag"] intValue], key.bytes, key.length, state);
                         NSMutableDictionary *response = result(status);
                         response[@"data"] = [[NSData dataWithBytes:state length:sizeof(state)] base64EncodedStringWithOptions:0];
                         response[@"bytes"] = @(sizeof(state));
@@ -365,7 +533,7 @@ int main(int argc, const char *argv[]) {
                         }
                         memcpy(signed_key, remote.bytes, signed_size);
                     } else {
-                        sign_status = sign_key([identity[@"bag"] intValue], [identity[@"key_class"] intValue],
+                        sign_status = keys.sign_key([identity[@"bag"] intValue], [identity[@"key_class"] intValue],
                                                local.bytes, local.length, remote_class, remote.bytes, remote.length,
                                                &signed_key, &signed_size);
                         if (sign_status == 0 && signed_key && signed_size)
@@ -384,7 +552,7 @@ int main(int argc, const char *argv[]) {
                     int session = -1;
                     int status = sign_status;
                     if (sign_status == 0 && signed_key && signed_size)
-                        status = remote_session([identity[@"bag"] intValue], flags,
+                        status = keys.remote_session([identity[@"bag"] intValue], flags,
                                                 local.bytes, local.length, signed_key, signed_size,
                                                 session_params.bytes, session_params.length, &session);
                     NSMutableDictionary *response = result(status);
@@ -406,7 +574,7 @@ int main(int argc, const char *argv[]) {
                         continue;
                     }
                     if ([operation isEqual:@"reset"]) {
-                        reply(reset_owned_session(sessions, session, reset_session));
+                        reply(reset_owned_session(sessions, session, keys.reset_session));
                         continue;
                     }
                     NSString *encoded = request[@"data"];
@@ -419,13 +587,13 @@ int main(int argc, const char *argv[]) {
                     size_t size = 0;
                     int status;
                     if ([operation isEqual:@"token"])
-                        status = session_token(session.intValue, &output, &size);
+                        status = keys.session_token(session.intValue, &output, &size);
                     else if ([operation isEqual:@"confirm"])
-                        status = peer_confirm(session.intValue, &output, &size);
+                        status = keys.peer_confirm(session.intValue, &output, &size);
                     else if ([operation isEqual:@"setup"])
-                        status = peer_setup(session.intValue, input.bytes, input.length, &output, &size);
+                        status = keys.peer_setup(session.intValue, input.bytes, input.length, &output, &size);
                     else
-                        status = remote_step(session.intValue, input.bytes, input.length, &output, &size);
+                        status = keys.remote_step(session.intValue, input.bytes, input.length, &output, &size);
                     NSMutableDictionary *response = result(status);
                     if (output && size && size <= 65536) {
                         NSData *data = [NSData dataWithBytes:output length:size];
@@ -440,8 +608,8 @@ int main(int argc, const char *argv[]) {
             }
         }
         free(line);
-        for (NSNumber *session in sessions) reset_session(session.intValue);
-        for (NSDictionary *identity in identities.allValues) unload_bag([identity[@"bag"] intValue]);
+        for (NSNumber *session in sessions) keys.reset_session(session.intValue);
+        for (NSDictionary *identity in identities.allValues) keys.unload_bag([identity[@"bag"] intValue]);
     }
     return 0;
 }

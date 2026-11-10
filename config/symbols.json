@@ -25,7 +25,7 @@
     "System": {
       "install_name": "/usr/lib/libSystem.B.dylib",
       "framework": false,
-      "symbols": ["_CC_SHA256", "__Block_object_assign", "__Block_object_dispose", "__NSConcreteStackBlock", "__Unwind_Resume", "___memcpy_chk", "___snprintf_chk", "___stack_chk_fail", "___stack_chk_guard", "___stdinp", "___stdoutp", "_close", "_dispatch_semaphore_create", "_dispatch_semaphore_signal", "_dispatch_semaphore_wait", "_dlopen", "_dlsym", "_fflush", "_free", "_fwrite", "_getline", "_lstat", "_malloc", "_memset", "_open", "_putchar", "_strcmp", "_sysctlbyname", "_unlink", "_write"]
+      "symbols": ["_CC_SHA256", "__Block_object_assign", "__Block_object_dispose", "__NSConcreteStackBlock", "__Unwind_Resume", "___memcpy_chk", "___snprintf_chk", "___stack_chk_fail", "___stack_chk_guard", "___stdinp", "___stdoutp", "__dyld_get_image_header", "__dyld_get_image_name", "__dyld_get_image_vmaddr_slide", "__dyld_image_count", "_close", "_dispatch_semaphore_create", "_dispatch_semaphore_signal", "_dispatch_semaphore_wait", "_dlopen", "_dlsym", "_fflush", "_free", "_fwrite", "_getline", "_lstat", "_malloc", "_memcmp", "_memcpy", "_memset", "_open", "_putchar", "_strcmp", "_strncmp", "_sysctlbyname", "_unlink", "_write"]
     }
   }
 }

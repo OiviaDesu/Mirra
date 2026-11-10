@@ -84,6 +84,10 @@ The fallback is not a general replacement for an iPhoneOS SDK.
 The endpoint is signed on the phone during [Bridge setup](Setup.md) using `ldid`
 and `config/endpoint.plist`.
 
+The endpoint's [keystore loader](KeyStore.md) keeps normal symbol lookup first
+and tries the verified build-specific map only for missing functions. The same
+source and build path serve both cases.
+
 ## Checks
 
 Run the checks appropriate to the change:
@@ -95,6 +99,7 @@ Run the checks appropriate to the change:
 | `make authorization` | SSH password helper and secure input channel |
 | `make keystore` | Bridge protocol and owned-session cleanup |
 | `make media` | Media hook behavior and incompatible-interface rejection |
+| `make symbols` | Shared keystore loader and image guards using host fixtures |
 | `make compatibility` | macOS version and architecture acceptance |
 | `make decoder` | Decoder option filtering, stream metadata and argument preservation |
 | `make certificate` | Certificate API handling using isolated fixtures |

@@ -41,7 +41,7 @@ $(BUILD)/interface: tests/interface.m src/app/app.m src/app/wizard.m src/app/wiz
 interface: $(BUILD)/interface
 	python3 scripts/checkinterface.py
 
-$(BUILD)/certificateprobe: tests/certificate.m src/phone/endpoint.m $(BUILD)/.host-target | $(BUILD)/.dir
+$(BUILD)/certificateprobe: tests/certificate.m src/phone/endpoint.m src/phone/keystore-symbols.h $(BUILD)/.host-target | $(BUILD)/.dir
 	xcrun clang $(HOST_FLAGS) -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation -framework Security "$<" -o "$@"
 
 certificate: $(BUILD)/certificateprobe
@@ -73,11 +73,23 @@ $(BUILD)/keystore.dylib: src/mirroring/keystore.m $(BUILD)/.host-target | $(BUIL
 $(BUILD)/keyprobe: tests/keystore.m src/mirroring/keystore.m $(BUILD)/.host-target | $(BUILD)/.dir
 	xcrun clang $(HOST_FLAGS) -fobjc-arc -fblocks -Wall -Wextra -O1 -F "$(SDK)/System/Library/PrivateFrameworks" -framework Foundation -framework AppleKeyStore -framework MobileActivationMacOS -L "$(SDK)/usr/lib/swift" -lswiftCore "$<" -o "$@"
 
-$(BUILD)/endpointprobe: tests/endpoint.m src/phone/endpoint.m $(BUILD)/.host-target | $(BUILD)/.dir
+$(BUILD)/endpointprobe: tests/endpoint.m src/phone/endpoint.m src/phone/keystore-symbols.h $(BUILD)/.host-target | $(BUILD)/.dir
 	xcrun clang $(HOST_FLAGS) -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation -framework Security "$<" -o "$@"
 
 endpoint: | $(BUILD)/.dir
 	python3 scripts/endpoint.py
+
+# Device self-check uses the production loader and the full iPhoneOS SDK.
+$(BUILD)/endpoint-check: tests/endpoint-check.m src/phone/endpoint.m src/phone/keystore-symbols.h | $(BUILD)/.dir
+	xcrun --sdk iphoneos clang -target arm64-apple-ios15.0 -isysroot "$(shell xcrun --sdk iphoneos --show-sdk-path)" -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation -framework Security "$<" -o "$@"
+
+$(BUILD)/symbols: tests/symbols.m src/phone/endpoint.m src/phone/keystore-symbols.h $(BUILD)/.host-target | $(BUILD)/.dir
+	xcrun clang $(HOST_FLAGS) -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation -framework Security "$<" -o "$@"
+
+.PHONY: symbols
+symbols: $(BUILD)/symbols $(BUILD)/endpointprobe
+	$(BUILD)/symbols
+	$(BUILD)/endpointprobe
 
 proxy:
 	python3 scripts/proxy.py

@@ -12,9 +12,11 @@ run Mirra's helper; the target follows
 - Available AppleKeyStore and activation APIs, a matching device certificate,
   and working attested-key operations.
 
-Live bridge verification currently covers iPhone XS on iOS 17.2. Other devices
-and jailbreaks need setup and Mirroring validation. Symbol availability and a
-matching architecture alone do not establish compatibility.
+The reference bridge is iPhone XS on iOS 17.2. The
+[keystore symbol fallback](KeyStore.md) records @OiviaDesu's iPhone 6s Plus
+results and the limits of that evidence. Other devices and jailbreaks need
+setup and Mirroring validation. Symbol availability and a matching architecture
+alone do not establish compatibility.
 
 Jailbreaks may impose passcode or Secure Enclave restrictions. Review the
 jailbreak's documentation before testing; for example,
