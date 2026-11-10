@@ -154,6 +154,7 @@
     "tests/test_bridgepaths.py",
     "tests/test_capabilities.py",
     "tests/test_compatibility.py",
+    "tests/test_control.py",
     "tests/test_decoder.py",
     "tests/test_decoder_restore.py",
     "tests/test_deployment.py",

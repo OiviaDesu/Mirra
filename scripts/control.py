@@ -46,7 +46,7 @@ def control():
         value = {'ok': False, 'message': 'The action could not finish. Refresh status before trying again. If the problem persists, use the setup guide and keep the existing diagnostics.',
                  'report': observe(service)}
     print(json.dumps(value))
-    emit('Service', 'reply', **value)
+    emit('Service', 'reply', result=value)
     return 0 if value['ok'] else 1
 
 
