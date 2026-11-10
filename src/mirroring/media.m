@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import "profile.h"
+#import "awdl-service.h"
 #import <Network/Network.h>
 #include <dlfcn.h>
 #include <stdio.h>
@@ -151,6 +152,8 @@ INTERPOSE(media_path, nw_path_create_evaluator_for_endpoint)
 __attribute__((constructor)) static void loaded(void) {
     @autoreleasepool {
         mediaEnabled = MirroringInstallMediaProfile();
+        if (mediaEnabled && MirraRepairAWDLService())
+            media_log("MEDIA_WORKSPACE oclp_remote_screen_service_repaired=1\n");
         media_log("MIRRA_MEDIA_PROFILE_%s profile=%s\n", mediaEnabled ? "READY" : "UNSUPPORTED", MIRRA_MEDIA_PROFILE);
     }
 }

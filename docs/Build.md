@@ -99,6 +99,7 @@ Run the checks appropriate to the change:
 | `make authorization` | SSH password helper and secure input channel |
 | `make keystore` | Bridge protocol and owned-session cleanup |
 | `make media` | Media hook behavior and incompatible-interface rejection |
+| `make awdl-service` | OCLP service repair, ABI guards and object lifetime using fixture classes |
 | `make symbols` | Shared keystore loader and image guards using host fixtures |
 | `make compatibility` | macOS version and architecture acceptance |
 | `make decoder` | Decoder option filtering, stream metadata and argument preservation |

@@ -51,7 +51,7 @@ $(BUILD)/.dir:
 	mkdir -p "$(@D)"
 	touch "$@"
 
-$(BUILD)/media.dylib: src/mirroring/media.m src/mirroring/profile.m src/mirroring/compatibility.m src/mirroring/profile.h $(BUILD)/.host-target | $(BUILD)/.dir
+$(BUILD)/media.dylib: src/mirroring/media.m src/mirroring/awdl-service.m src/mirroring/awdl-service.h src/mirroring/profile.m src/mirroring/compatibility.m src/mirroring/profile.h $(BUILD)/.host-target | $(BUILD)/.dir
 	xcrun clang $(HOST_FLAGS) -dynamiclib -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation -framework Network $(filter %.m,$^) -o "$@"
 	codesign --force --sign - "$@"
 
@@ -106,8 +106,15 @@ devices:
 test:
 	python3 -m unittest discover -s tests -v
 
-media: $(BUILD)/media.dylib $(BUILD)/inspector $(BUILD)/mediaprobe $(BUILD)/mismatch.dylib
+media: awdl-service $(BUILD)/media.dylib $(BUILD)/inspector $(BUILD)/mediaprobe $(BUILD)/mismatch.dylib
 	python3 tests/checkmedia.py
+
+$(BUILD)/awdl-service: tests/awdl-service.m src/mirroring/awdl-service.m src/mirroring/awdl-service.h $(BUILD)/.host-target | $(BUILD)/.dir
+	xcrun clang $(HOST_FLAGS) -fobjc-arc -Wall -Wextra -Werror -framework Foundation "$<" -o "$@"
+
+.PHONY: awdl-service
+awdl-service: $(BUILD)/awdl-service
+	$(BUILD)/awdl-service
 
 keystore: $(BUILD)/keyprobe $(BUILD)/endpointprobe
 	python3 tests/checkkeystore.py

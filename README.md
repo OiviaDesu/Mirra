@@ -170,8 +170,8 @@ Mirra's original source and artwork use the [MIT License](LICENSE).
 
 [@OiviaDesu](https://github.com/OiviaDesu) contributed the keystore symbol map,
 fallback lookup and device self-check in [PR #4](https://github.com/eiyuumiru/Mirra/pull/4).
-The adaptation retains co-author credit; its device evidence is recorded in
-[Keystore loading](docs/KeyStore.md).
+The same contributor provided the OCLP RemoteScreen service repair and device
+validation reports. Both adapted commits retain co-author credit.
 
 [MtkWireless](https://github.com/Dino-VN/MtkWireless) and the
 [HighDelay NVIDIA driver](https://github.com/HighDelay/nvidia-macos-driver/releases)

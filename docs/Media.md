@@ -25,6 +25,37 @@ Wi-Fi conditions and decoder behavior affect motion and display quality.
 Inspect packet loss, stream dimensions and decoder errors before changing
 transport settings. Router channels and driver installation are external to Mirra.
 
+## OCLP RemoteScreen service repair
+
+[Issue #3](https://github.com/eiyuumiru/Mirra/issues/3) reports a crash in
+`WiFiP2PTrafficRegistrationReservation initForService:` on an OCLP host after
+bridge setup succeeds. The OCLP WiFiPeerToPeer wrapper exports the
+`_AWDLTrafficRegistrationServiceRemoteScreen` constant as an x86 function stub.
+Apple code reads its instruction bytes as an NSString pointer and crashes when
+copying that invalid object. The initial T2 explanation in the issue was
+[corrected by its author](https://github.com/eiyuumiru/Mirra/issues/3#issuecomment-6746456521).
+
+`awdl-service.m` isolates the repair co-authored with
+[@OiviaDesu](https://github.com/OiviaDesu), adapted from his
+[PR #4](https://github.com/eiyuumiru/Mirra/pull/4). After media profile
+validation, it requires the exact eight stub bytes inside a loaded x86_64
+`__TEXT,__text` section and the expected Objective-C initializer signature.
+Only the invalid stub-derived argument becomes the string `RemoteScreen`.
+Stock constants, unknown stubs and other service values are left alone. The
+replacement preserves initializer ownership and does not retain the invalid
+argument. An inherited method is overridden only on the target class.
+
+The [PR author's successful connection report](https://github.com/eiyuumiru/Mirra/issues/3#issuecomment-6747391254)
+applies to MacBookPro10,1, OCLP 3.0.0-rc.5 and build `25G332`, with the `no_fls`
+decoder route. It does not establish that an iMac startup failure has the same
+cause. This branch already chooses `no_fls` automatically for Intel `25G332`;
+see [Decoder compatibility](Decoder.md) for unload failure and fallback behavior.
+
+`make awdl-service` checks the repair with local fixture classes, including
+stock paths, mismatched code and ABI, repeated installation, inherited methods,
+argument preservation and object lifetime. It does not launch Apple's app or
+verify a connection on an OCLP device.
+
 ## Resolution and text clarity
 
 The incoming video resolution and the pixels used to display the Mirroring

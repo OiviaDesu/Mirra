@@ -5,6 +5,9 @@
 - Extend the existing keystore loader with the guarded symbol-map fallback and
   shared device self-check, contributed by [@OiviaDesu](https://github.com/OiviaDesu)
   in [PR #4](https://github.com/eiyuumiru/Mirra/pull/4). See [Keystore loading](docs/KeyStore.md).
+- Repair the known OCLP RemoteScreen constant stub with guarded method patching,
+  based on [@OiviaDesu](https://github.com/OiviaDesu)'s
+  [PR #4](https://github.com/eiyuumiru/Mirra/pull/4) repair.
 
 - Target Intel macOS 15 or later for the app and every bundled macOS helper.
   Verify binary deployment targets during app building and packaging.
