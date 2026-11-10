@@ -31,6 +31,26 @@ python3 scripts/service.py remove
 `start` loads it again. `remove` stops support and removes the owned registration,
 preserving private setup, logs and the installed package.
 
+## macOS data-access prompts
+
+The native socket helper uses a temporary directory inside iPhone Mirroring's
+container. macOS may ask whether `python3` can access data from other apps; the
+request belongs to Mirra's bundled background interpreter. The permission can
+expire when that interpreter exits. It is not an iPhone jailbreak or T2 check.
+
+If startup fails, support now waits without retrying in the same interpreter.
+The window shows the failure and a recovery action instead of staying on
+"Preparing app support". Go back to Settings, stop support, then start it to
+retry deliberately. Allow the macOS request if you want Mirra to use that
+temporary directory. If the folder is missing, open and quit Apple's iPhone
+Mirroring once before retrying. A later startup error still needs its own
+diagnosis in the service log; granting file access does not prove readiness.
+
+An interrupted startup is also held on the next launchd invocation. A normal
+stop rearms it. Bridge reconnection inside a running native session remains
+automatic. No Full Disk Access grant or privacy-database changes are required
+by this fix. See Apple's [macOS app-data privacy explanation](https://developer.apple.com/videos/play/wwdc2023/10053/).
+
 ## Update or switch profiles
 
 ```sh

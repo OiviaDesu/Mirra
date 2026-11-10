@@ -28,6 +28,7 @@ from logs import BoundedLogs,open_append
 from retention import track,retire,prune
 from compatibility import require_media_profile, supported_apple_app
 from decoder import DecoderRoute
+from startup import StartupError, require_container, run_service
 
 
 def main():
@@ -43,6 +44,15 @@ def main():
     parser.add_argument('--service-log',help=argparse.SUPPRESS)
     parser.add_argument('--service-state',help=argparse.SUPPRESS)
     args=parser.parse_args()
+    if args.service_state:
+        return run_service(lambda stop: run_session(parser,args,stop), args.service_state)
+    return run_session(parser,args,threading.Event())
+
+
+def run_session(parser,args,requested_stop):
+    # Cleanup also sets the worker stop event. It must not be mistaken for an
+    # explicit user shutdown by the service's failed-startup guard.
+    stop=threading.Event()
     if args.recover_backend and not args.launch_services:
         parser.error('--recover-backend requires --launch-services')
     config=load_config(args.config)
@@ -69,7 +79,8 @@ def main():
     try:media_profile=require_media_profile()
     except (OSError,RuntimeError,subprocess.SubprocessError) as error:parser.error(str(error))
     container=Path.home()/'Library/Containers/com.apple.ScreenContinuity/Data/tmp'
-    if not container.is_dir():parser.error('Initialize the system app container before using the native adapter')
+    require_container(container)
+    if requested_stop.is_set():return 0
     os.umask(0o077)
     run_directory=ROOT/'runtime'/('native-'+datetime.now().strftime('%Y%m%d-%H%M%S'))
     run_directory.mkdir(parents=True,exist_ok=False)
@@ -86,14 +97,18 @@ def main():
         shutil.copy2(adapter,target)
         target.chmod(0o600)
         staged_adapters.append(target)
-    private=Path(tempfile.mkdtemp(prefix='mb-',dir=container));private.chmod(0o700)
+    try:
+        private=Path(tempfile.mkdtemp(prefix='mb-',dir=container));private.chmod(0o700)
+    except PermissionError as error:
+        raise StartupError('container_access_denied',
+                           'macOS denied creation of the Mirroring socket directory') from error
     short=Path(tempfile.mkdtemp(prefix='mb-',dir='/tmp'));short.chmod(0o700)
     link=short/'c';link.symlink_to(private,target_is_directory=True)
     address=link/'s';actual=private/'s'
     listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     helper=BindHelper(executable,allow_awdl=True)
     app_observer=NativeAppObserver(executable,staged_adapters[0])
-    stop=threading.Event();backend=app=None;launch_agent=None;usb_proxy=None;decoder=None
+    backend=app=None;launch_agent=None;usb_proxy=None;decoder=None
     log_limits=BoundedLogs(on_error=stop.set)
     before=hashlib.sha256(executable.read_bytes()).hexdigest()
     record={'run':run_directory.name,'supervisor_pid':os.getpid(),'system_app':str(config.system_app),'executable_sha256_before':before,
@@ -105,8 +120,9 @@ def main():
             'launch_method':'ordinary LaunchServices with background support' if args.launch_services else 'custom launch command',
             'validation_scope':'Lifecycle only; video and input require a separate observation',
             'adapter_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in staged_adapters}}
-    def signals(*_):stop.set()
+    def signals(*_):requested_stop.set();stop.set()
     signal.signal(signal.SIGINT,signals);signal.signal(signal.SIGTERM,signals)
+    if requested_stop.is_set():stop.set()
     def bindings():
         while not stop.is_set():
             try:connection,_=listener.accept()
@@ -136,6 +152,9 @@ def main():
     def stop_owned_apps():
         app_observer.terminate_owned()
     failure=None
+    if args.service_state:
+        write_state(Path(args.service_state),{'phase':'preparing','directory':str(run_directory),
+                    'supervisor_birth':record['supervisor_birth']})
     try:
         if args.service_log:
             for fd in (1,2):

@@ -28,7 +28,7 @@ HOST_TOOLS = ['inspector']
 DECODER_ADAPTERS = ['decoder-route.dylib']
 PACKAGE_ADAPTERS = ADAPTERS + DECODER_ADAPTERS
 PACKAGE_SCHEMA = 5
-SUPPORT_REVISION = 19
+SUPPORT_REVISION = 20
 
 
 class NativeService:
@@ -89,6 +89,8 @@ class NativeService:
             required |= {'scripts/decoder.py', 'scripts/decoder_route.py', 'build/decoder-route.dylib'}
             if type(value.get('support_revision')) is not int or value['support_revision'] < 1:
                 raise RuntimeError('Invalid Mirra support revision')
+            if value['support_revision'] >= 20:
+                required.add('scripts/startup.py')
         if not required.issubset(value['files']):
             raise RuntimeError('Native support package is missing required files')
         for name, digest in value['files'].items():
@@ -125,7 +127,7 @@ class NativeService:
         return self.install()
 
     def validate_source(self):
-        for name in ('native.py', 'decoder.py', 'decoder_route.py'):
+        for name in ('native.py', 'decoder.py', 'decoder_route.py', 'startup.py'):
             if not (self.source / 'scripts' / name).is_file():
                 raise RuntimeError('Updated support is incomplete; missing ' + name)
         for name in PACKAGE_ADAPTERS + HOST_TOOLS:
@@ -345,11 +347,19 @@ class NativeService:
             return value
         self.private_file(self.state)
         state = json.loads(self.state.read_text())
+        birth = state['supervisor_birth']
+        alive = process_birth(birth[0]) == tuple(birth)
+        value.update(supervisor_alive=alive, supervisor_birth=birth)
+        if state.get('startup_failure'):
+            value['startup_failure'] = state['startup_failure']
+        if 'directory' not in state:
+            if state['phase'] not in ('startup_checks', 'startup_failed', 'stopped'):
+                raise RuntimeError('Unexpected native startup state')
+            value['last_cleanup_verified'] = bool(not alive and state.get('startup_cleanup_verified'))
+            return value
         directory = Path(state['directory'])
         if directory.parent != self.package / 'runtime' or not directory.name.startswith('native-'):
             raise RuntimeError('Unexpected native support state directory')
-        birth = state['supervisor_birth']
-        alive = process_birth(birth[0]) == tuple(birth)
         value.update(run=directory.name, supervisor_alive=alive, supervisor_birth=birth)
         if not alive:
             result = directory / 'result.json'

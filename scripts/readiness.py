@@ -84,6 +84,21 @@ def observe(service=None, *, timeout=2):
                           'Start support, then open Apple’s iPhone Mirroring.' if enabled else
                           'Enable support at login to use your saved bridge setup.',
                           actions=('start' if enabled else 'install', 'setup', 'guide'), transport=transport)
+        if before.get('startup_failure'):
+            code = before['startup_failure']
+            title, detail = {
+                'container_access_denied': ('Allow access to Mirroring support',
+                    'macOS denied access to iPhone Mirroring’s temporary folder. Go back to Settings, stop support, then start it and choose Allow in the macOS prompt.'),
+                'container_missing': ('Open iPhone Mirroring once',
+                    'Apple’s iPhone Mirroring has not created its temporary folder. Open the app once and quit it, then go back to Settings and stop and start support.'),
+                'support_access_denied': ('Support needs file access',
+                    'macOS denied a file operation during startup. Check the service log, then go back to Settings and stop and start support when you are ready to retry.'),
+                'startup_interrupted': ('Support startup was interrupted',
+                    'The previous startup ended unexpectedly. Automatic retries are paused. Check the service log, then go back to Settings and stop and start support.')
+            }.get(code, ('Support could not start',
+                'Automatic retries are paused after a support failure. Check the service log for the reason, then go back to Settings and stop and start support.'))
+            return report('startup_failed', title, detail,
+                          actions=('stop', 'refresh', 'guide'), transport=transport)
         if not before.get('supervisor_alive') or not before.get('native_launch_support_ready'):
             return report('starting', 'Preparing app support',
                           'The background service is starting or restoring its previous session. Check again shortly.',

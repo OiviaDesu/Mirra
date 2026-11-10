@@ -156,6 +156,19 @@ class SupportStatusTests(unittest.TestCase):
         self.assertEqual(result['state'], 'needs_attention')
         self.assertNotIn('retry automatically', result['detail'])
 
+    def test_startup_failure_is_actionable_without_claiming_readiness(self):
+        self.snapshot.update(native_launch_support_ready=False, backend_ready=False)
+        for code in ('container_access_denied', 'container_missing', 'startup_interrupted',
+                     'support_access_denied', 'support_startup_failed', 'PRIVATE unknown reason'):
+            self.snapshot['startup_failure'] = code
+            with patch('readiness.health') as health:
+                result = observe(self.service)
+            self.assertEqual(result['state'], 'startup_failed')
+            self.assertIn('stop', result['actions'])
+            self.assertNotIn('open_mirroring', result['actions'])
+            self.assertNotIn('PRIVATE', json.dumps(result))
+            health.assert_not_called()
+
     def test_changed_installation_does_not_read_or_start_backend(self):
         self.service.validate_package.side_effect = RuntimeError('PRIVATE changed file')
         result = observe(self.service)

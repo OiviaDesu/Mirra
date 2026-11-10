@@ -26,7 +26,7 @@ class NativeServiceTests(unittest.TestCase):
         (self.source / 'scripts').mkdir(parents=True)
         (self.source / 'build').mkdir()
         (self.source / 'scripts/native.py').write_text('print("test fixture")\n')
-        for name in ('decoder.py', 'decoder_route.py'):
+        for name in ('decoder.py', 'decoder_route.py', 'startup.py'):
             (self.source / 'scripts' / name).write_text('# test fixture\n')
         for name in PACKAGE_ADAPTERS + HOST_TOOLS:
             (self.source / 'build' / name).write_bytes(b'test fixture only')
@@ -61,6 +61,22 @@ class NativeServiceTests(unittest.TestCase):
             for value, expected in (({'ready': True}, True), ({'ready': False}, False), ([], False)):
                 write_state(run / 'decoder-route.json', value)
                 self.assertEqual(self.service.status()['native_launch_support_ready'], expected)
+
+    def test_startup_failure_before_run_directory_can_be_observed_and_stopped(self):
+        self.service.base.mkdir(parents=True)
+        birth = (42, os.getuid(), 100, 1)
+        for alive in (True, False):
+            write_state(self.service.state, {'phase': 'stopped' if not alive else 'startup_failed',
+                'supervisor_birth': birth, 'startup_failure': 'container_access_denied',
+                'startup_cleanup_verified': not alive})
+            with patch.object(self.service, 'registration', return_value={}), \
+                    patch('installation.process_birth', return_value=birth if alive else None):
+                value = self.service.status()
+            self.assertEqual(value['supervisor_alive'], alive)
+            self.assertFalse(value['native_launch_support_ready'])
+            self.assertFalse(value['backend_ready'])
+            self.assertEqual(value['last_cleanup_verified'], not alive)
+            self.assertEqual(value['startup_failure'], 'container_access_denied')
 
     def test_package_uses_private_stable_files_and_excludes_apple_apps(self):
         self.prepare()
@@ -267,6 +283,29 @@ class NativeServiceTests(unittest.TestCase):
                 self.service.update_saved()
         stop.assert_not_called()
         self.assertEqual((self.service.package / 'manifest.json').read_bytes(), before)
+
+    def test_build341_upgrade_keeps_saved_bridge_and_launch_definition(self):
+        self.prepare()
+        path = self.service.package / 'manifest.json'
+        manifest = json.loads(path.read_text())
+        manifest['support_revision'] = 19
+        manifest['files'].pop('scripts/startup.py')
+        (self.service.package / 'scripts/startup.py').unlink()
+        write_state(path, manifest)
+        previous = load_config(self.service.package / 'config.json')
+        definition = self.service.definition(previous)
+        self.install_plist(definition)
+        self.assertTrue(self.service.needs_update())
+        with patch.object(self.service, 'registration', return_value={}), \
+                patch.object(self.service, 'stop', return_value={}) as stop, \
+                patch.object(self.service, 'start', return_value={}), \
+                patch('installation.subprocess.run', return_value=subprocess.CompletedProcess([], 0)):
+            self.service.update_saved()
+        stop.assert_called_once()
+        self.assertFalse(self.service.needs_update())
+        self.assertEqual(load_config(self.service.package / 'config.json'), previous)
+        self.assertEqual(plistlib.loads(self.service.plist.read_bytes()), definition)
+        self.assertTrue((self.service.package / 'scripts/startup.py').is_file())
 
     def test_upgrade_preserves_a_foreign_login_definition(self):
         self.legacy_package()

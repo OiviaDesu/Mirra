@@ -95,6 +95,7 @@
     "scripts/sharing.py",
     "scripts/sharingd.py",
     "scripts/sockets.py",
+    "scripts/startup.py",
     "scripts/state.py",
     "scripts/status.py",
     "scripts/stderr.py",
@@ -170,6 +171,7 @@
     "tests/test_retention.py",
     "tests/test_runtime.py",
     "tests/test_sharingd.py",
+    "tests/test_startup.py",
     "tests/test_supervisor.py"
   ]
 }
