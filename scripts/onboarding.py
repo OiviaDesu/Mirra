@@ -21,6 +21,10 @@ import activity
 
 
 SETUP_MESSAGES = {
+    'ssh_no_route': 'The Mac cannot reach the phone’s Wi-Fi address. Check the current address, the local network connection, VPN routing and Mirra’s Local Network permission in System Settings. You can use USB setup instead.',
+    'ssh_refused': 'The phone’s SSH port refused the connection. Check the port and that OpenSSH is listening over Wi-Fi with the jailbreak active, or use USB setup.',
+    'ssh_unreachable': 'The phone did not return an SSH host key over Wi-Fi. Check its current address and SSH port, Mirra’s Local Network permission, VPN routing and router client isolation, or use USB setup.',
+    'usb_ssh_unreachable': 'The selected USB bridge did not return an SSH host key. Keep it connected and check the configured phone SSH port, OpenSSH and active jailbreak.',
     'unsupported_host': 'This Mac or its system frameworks are not supported by this Mirra build. It requires Intel macOS 15 or later with compatible private interfaces. Keep the diagnostics for compatibility review.',
     'host_check_unavailable': 'Mirra could not check this Mac. Reopen a complete copy of Mirra and retry. If the check still fails, keep the diagnostics for review.',
     'app_unavailable': 'Apple’s iPhone Mirroring app could not be read. Check that it is installed in System Applications before continuing.',
@@ -192,7 +196,12 @@ class SetupWizard:
         with self.connection(load_config(access)) as config:
             response = self.scan_keys(config)
             if response.returncode:
-                raise RuntimeError('The phone’s SSH server could not be reached')
+                if config.transport == 'usb':
+                    raise SetupIssue('usb_ssh_unreachable')
+                detail = response.stderr.decode(errors='replace').lower()
+                code = ('ssh_no_route' if 'no route to host' in detail
+                        else 'ssh_refused' if 'connection refused' in detail else 'ssh_unreachable')
+                raise SetupIssue(code)
             candidates = fingerprints(response.stdout)
             rank = {'ssh-ed25519': 0, 'ecdsa-sha2-nistp256': 1, 'ssh-rsa': 2}
             fingerprint, line = min(candidates, key=lambda item: rank[item[1].split()[1]])

@@ -79,6 +79,7 @@ def main():
             'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': release['version'], 'CFBundleVersion': release['build'],
             'CFBundleIconFile': 'Mirra.icns',
             'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': MINIMUM_MACOS,
+            'NSLocalNetworkUsageDescription': 'Mirra connects to your selected jailbroken bridge over SSH on your local network.',
             'SupportPython': 'Support/python/bin/python3'}
     (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
     (support / 'manifest.json').write_text(json.dumps({'files': files}, indent=2) + '\n')

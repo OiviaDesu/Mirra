@@ -49,6 +49,11 @@ logs show the helper executing and certificate checks passing at this location.
 The iOS 15 symbol-resolution problem in issue #2 is a separate compatibility
 step. SIGKILL alone does not identify the original kernel rejection mechanism.
 
+Wi-Fi host-key failures distinguish an unreachable route, a refused SSH port,
+and a missing response. USB failures retain USB-specific guidance. The app
+includes a local-network purpose string. These diagnostics do not change SSH
+trust or bypass host-key verification.
+
 ## Dopamine with RootHide
 
 RootHide uses a virtual bootstrap filesystem and separate locations for code

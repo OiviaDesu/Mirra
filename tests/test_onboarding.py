@@ -53,6 +53,22 @@ class OnboardingTests(unittest.TestCase):
         self.assertEqual(resumed['id'], state['id'])
         self.assertEqual(resumed['phase'], 'trust')
 
+    def test_wifi_transport_failures_keep_contact_state_and_specific_error(self):
+        state = self.begin()
+        for stderr, code in [(b'No route to host', 'ssh_no_route'),
+                             (b'Connection refused', 'ssh_refused'), (b'', 'ssh_unreachable')]:
+            with self.subTest(code=code):
+                saved = self.wizard.load(); saved['phase'] = 'contact'; self.wizard.save(saved)
+                self.wizard.scan_keys.return_value = subprocess.CompletedProcess([], 1, b'', stderr)
+                with self.assertRaises(SetupIssue) as caught:
+                    self.wizard.scan(state['id'])
+                self.assertEqual(caught.exception.code, code)
+                result = self.wizard.failure(state['id'], 'scan', caught.exception)
+                self.assertEqual(result['error_code'], code)
+                self.assertEqual(result['phase'], 'contact')
+                _, access, _ = self.wizard.paths(state['id'])
+                self.assertFalse(load_config(access).known_hosts_file.exists())
+
     def test_wrong_fingerprint_never_enrolls_or_advances(self):
         state = self.begin()
         with patch('onboarding.pin_host') as pin:
