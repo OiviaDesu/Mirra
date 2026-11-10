@@ -78,6 +78,26 @@ class NativeServiceTests(unittest.TestCase):
             self.assertEqual(value['last_cleanup_verified'], not alive)
             self.assertEqual(value['startup_failure'], 'container_access_denied')
 
+    def test_legacy_decoder_startup_failure_does_not_require_unstarted_launch_agent_restore(self):
+        run = self.service.package / 'runtime/native-fixture'
+        run.mkdir(parents=True, mode=0o700)
+        birth = (42, os.getuid(), 100, 1)
+        write_state(self.service.state, {'phase': 'stopped', 'directory': str(run), 'supervisor_birth': birth})
+        result = {'backend_cleanup': {'cleanup_verified': True},
+                  'decoder_route': {'enabled': True, 'mode': 'no_fls'},
+                  'decoder_cleanup': {'cleanup_verified': True, 'original_avc_restored': True}}
+        with patch.object(self.service, 'registration', return_value={}), \
+                patch('installation.process_birth', return_value=None):
+            write_state(run / 'result.json', result)
+            self.assertTrue(self.service.status()['last_cleanup_verified'])
+            for change in ({'decoder_cleanup': {'cleanup_verified': False, 'original_avc_restored': False}},
+                           {'backend_cleanup': {'cleanup_verified': False}},
+                           {'decoder_route': {'enabled': True, 'ready': True}},
+                           {'launch_agent_attempted': True},
+                           {'launch_agent_restore_error': 'failed'}):
+                write_state(run / 'result.json', dict(result, **change))
+                self.assertFalse(self.service.status()['last_cleanup_verified'])
+
     def test_package_uses_private_stable_files_and_excludes_apple_apps(self):
         self.prepare()
         value = self.service.validate_package()

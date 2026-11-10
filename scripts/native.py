@@ -115,6 +115,7 @@ def run_session(parser,args,requested_stop):
             'supervisor_birth':process_birth(os.getpid()),
             'duration_seconds':duration,'native_mirroring_verified':None,'daily_use_verified':False,
             'automatic_backend_recovery':args.recover_backend,
+            'launch_agent_attempted':False,
             'media_profile':media_profile['profile'],
             'managed_usb_forwarding':args.manage_usb,
             'launch_method':'ordinary LaunchServices with background support' if args.launch_services else 'custom launch command',
@@ -184,6 +185,7 @@ def run_session(parser,args,requested_stop):
             support_environment={'DYLD_INSERT_LIBRARIES':':'.join(str(p) for p in staged_adapters[:2]),
                                  'MIRRA_BIND_SOCKET':str(address)}
             if args.launch_services:
+                record['launch_agent_attempted']=True
                 launch_agent=NativeLaunchAgent(run_directory,support_environment,stop)
                 record['launch_agent']=launch_agent.start()
                 for fd,name in [(1,'native-launch-agent.stdout.log'),(2,'native-launch-agent.stderr.log')]:

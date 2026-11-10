@@ -365,8 +365,17 @@ class NativeService:
             result = directory / 'result.json'
             if result.exists():
                 data = json.loads(result.read_text())
+                launch_clean = bool(data.get('launch_agent_restored')) or data.get('launch_agent_attempted') is False
+                if 'launch_agent_attempted' not in data:
+                    # Builds 341/342 save only the selected decoder decision
+                    # when decoder.start() fails, before trying a launch agent.
+                    # Accept that old record only with verified AVC restoration.
+                    decoder = data.get('decoder_route', {})
+                    launch_clean = launch_clean or (decoder.get('enabled') is True and 'ready' not in decoder
+                        and not data.get('launch_agent')
+                        and data.get('decoder_cleanup', {}).get('original_avc_restored') is True)
                 value['last_cleanup_verified'] = bool(data.get('backend_cleanup', {}).get('cleanup_verified')
-                    and data.get('launch_agent_restored') and not data.get('launch_agent_restore_error')
+                    and launch_clean and not data.get('launch_agent_restore_error')
                     and not data.get('app_cleanup_error') and not data.get('decoder_restore_error')
                     and (not data.get('decoder_route', {}).get('enabled')
                          or data.get('decoder_cleanup', {}).get('cleanup_verified')))
